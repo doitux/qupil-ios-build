@@ -58,6 +58,9 @@ jobs:
           test -x "$QT_ROOT/$QT_VERSION/macos/bin/qt-cmake"
           test -x "$QT_ROOT/$QT_VERSION/ios/bin/qt-cmake"
 
+          echo "Installed Qt iOS FFmpeg XCFrameworks (diagnostic):"
+          find "$QT_ROOT/$QT_VERSION/ios" -type d -name '*.xcframework'             | grep -Ei '/(lib)?(avcodec|avformat|avutil|swresample|swscale)\.xcframework$'             | sort || true
+
       - name: Re-run source validation on macOS
         shell: bash
         run: |
@@ -76,6 +79,13 @@ jobs:
             "$QT_HOST/bin/lrelease" i18n/qupil_de.ts -qm i18n/qupil_de.qm
             test -s i18n/qupil_de.qm
           fi
+
+      - name: Verify iOS FFmpeg CMake integration
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -Fq 'qt_add_ios_ffmpeg_libraries(qupil)' CMakeLists.txt
+          grep -Fq 'QT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY' CMakeLists.txt
 
       - name: Configure iPhone/iPad Release
         shell: bash

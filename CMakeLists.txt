@@ -127,6 +127,22 @@ qt_import_plugins(qupil
     INCLUDE_BY_TYPE sqldrivers Qt6::QSQLiteDriverPlugin
 )
 
+
+# Qupil iOS: Qt Multimedia FFmpeg frameworks
+# Official Qt iOS binary packages with Multimedia include an FFmpeg backend.
+# Those FFmpeg XCFrameworks must be linked/embedded explicitly on iOS.
+if(IOS)
+    if(NOT COMMAND qt_add_ios_ffmpeg_libraries)
+        message(FATAL_ERROR
+            "Qupil iOS requires Qt >= 6.8 for qt_add_ios_ffmpeg_libraries() "
+            "when using the prebuilt Qt Multimedia package")
+    endif()
+    # CI deliberately produces an unsigned .app/.ipa. Do not make Xcode try to
+    # sign the FFmpeg frameworks while copying them into the application bundle.
+    set(QT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY ON)
+    qt_add_ios_ffmpeg_libraries(qupil)
+endif()
+
 target_compile_definitions(qupil PRIVATE
     QUPIL_VERSION="${PROJECT_VERSION}"
 )
