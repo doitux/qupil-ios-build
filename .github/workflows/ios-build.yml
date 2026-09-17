@@ -1,0 +1,125 @@
+name: Qupil iOS Build
+
+on:
+  workflow_dispatch:
+
+# Only the Linux launcher dispatches this workflow. Do not also trigger on push,
+# otherwise every source upload creates one automatic run plus one manual run.
+concurrency:
+  group: qupil-ios-build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      QT_VERSION: "6.11.2"
+      IOS_DEPLOYMENT_TARGET: "17.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Apple toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sw_vers
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          cmake --version
+          ninja --version || true
+
+      - name: Install Qt host + iOS
+        shell: bash
+        run: |
+          set -euxo pipefail
+          AQT_VENV="$RUNNER_TEMP/aqt-venv"
+          QT_ROOT="$RUNNER_TEMP/Qt"
+          python3 -m venv "$AQT_VENV"
+          "$AQT_VENV/bin/python" -m pip install --upgrade pip
+          "$AQT_VENV/bin/python" -m pip install 'aqtinstall==3.3.0'
+
+          echo "Available iOS architectures for Qt $QT_VERSION:"
+          "$AQT_VENV/bin/python" -m aqt list-qt mac ios --arch "$QT_VERSION" | tee "$RUNNER_TEMP/qt-ios-arches.txt"
+          grep -Eq '(^|[[:space:]])ios([[:space:]]|$)' "$RUNNER_TEMP/qt-ios-arches.txt"
+          echo "Checking qtmultimedia module for iOS..."
+          "$AQT_VENV/bin/python" -m aqt list-qt mac ios --modules "$QT_VERSION" ios | tee "$RUNNER_TEMP/qt-ios-modules.txt"
+          grep -Eq '(^|[[:space:]])qtmultimedia([[:space:]]|$)' "$RUNNER_TEMP/qt-ios-modules.txt"
+
+          "$AQT_VENV/bin/python" -m aqt install-qt             --outputdir "$QT_ROOT" --internal             mac desktop "$QT_VERSION" clang_64             --modules qtmultimedia
+
+          "$AQT_VENV/bin/python" -m aqt install-qt             --outputdir "$QT_ROOT" --internal             mac ios "$QT_VERSION" ios             --modules qtmultimedia
+
+          test -x "$QT_ROOT/$QT_VERSION/macos/bin/qt-cmake"
+          test -x "$QT_ROOT/$QT_VERSION/ios/bin/qt-cmake"
+
+      - name: Re-run source validation on macOS
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 tests/source_sanity.py
+          python3 tests/sql_static_smoke.py
+          python3 tests/i18n_static_smoke.py
+          python3 tests/i18n_catalog_smoke.py
+
+      - name: Compile translation catalog
+        shell: bash
+        run: |
+          set -euxo pipefail
+          QT_HOST="$RUNNER_TEMP/Qt/$QT_VERSION/macos"
+          if [[ -f i18n/qupil_de.ts ]]; then
+            "$QT_HOST/bin/lrelease" i18n/qupil_de.ts -qm i18n/qupil_de.qm
+            test -s i18n/qupil_de.qm
+          fi
+
+      - name: Configure iPhone/iPad Release
+        shell: bash
+        run: |
+          set -euxo pipefail
+          QT_ROOT="$RUNNER_TEMP/Qt"
+          QT_HOST="$QT_ROOT/$QT_VERSION/macos"
+          QT_IOS="$QT_ROOT/$QT_VERSION/ios"
+          rm -rf build-ios
+          "$QT_IOS/bin/qt-cmake"             -S . -B build-ios -G Xcode             -DQT_HOST_PATH="$QT_HOST"             -DBUILD_TESTING=OFF             -DCMAKE_BUILD_TYPE=Release             -DCMAKE_OSX_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET"             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
+
+      - name: Build unsigned device app
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake --build build-ios --config Release --parallel 4 --             -sdk iphoneos             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APP="$(find build-ios -type d -name '*.app' -path '*iphoneos*' | head -n 1)"
+          test -n "$APP"
+          test -d "$APP"
+          echo "Found app: $APP"
+          rm -rf dist Payload
+          mkdir -p dist Payload
+          cp -R "$APP" Payload/
+          /usr/bin/zip -qry dist/Qupil-ios-unsigned.ipa Payload
+          rm -rf Payload
+          shasum -a 256 dist/Qupil-ios-unsigned.ipa > dist/SHA256SUMS
+          {
+            echo "Qt: $QT_VERSION"
+            echo "Runner: macos-26"
+            xcodebuild -version
+            echo "iOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
+            echo "Deployment target: $IOS_DEPLOYMENT_TARGET"
+            echo "Commit: $GITHUB_SHA"
+          } > dist/BUILD-INFO.txt
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Qupil-iOS-unsigned
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,218 @@
+cmake_minimum_required(VERSION 3.21)
+
+project(Qupil VERSION 1.5.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+
+include(CTest)
+
+find_package(Qt6 6.5 REQUIRED COMPONENTS
+    Core
+    Gui
+    Qml
+    Quick
+    QuickControls2
+    Sql
+    Multimedia
+)
+
+qt_standard_project_setup(REQUIRES 6.5)
+
+if(QT_KNOWN_POLICY_QTP0004)
+    qt_policy(SET QTP0004 NEW)
+endif()
+
+qt_add_executable(qupil
+    src/app/main.cpp
+    src/app/databasemanager.cpp
+    src/app/databasemanager.h
+    src/app/variantlistmodel.cpp
+    src/app/variantlistmodel.h
+    src/app/appcontroller.cpp
+    src/app/appcontroller.h
+    src/app/metronomecontroller.cpp
+    src/app/metronomecontroller.h
+)
+
+qt_add_qml_module(qupil
+    URI Qupil
+    VERSION 1.0
+    QML_FILES
+        qml/Main.qml
+        qml/components/SectionCard.qml
+        qml/components/EmptyState.qml
+        qml/components/LabeledField.qml
+        qml/pages/DashboardPage.qml
+        qml/pages/SchedulePage.qml
+        qml/pages/PupilsPage.qml
+        qml/pages/PupilDetailPage.qml
+        qml/pages/LessonsPage.qml
+        qml/pages/LessonDetailPage.qml
+        qml/pages/RemindersPage.qml
+        qml/pages/LibraryPage.qml
+        qml/pages/RecitalsPage.qml
+        qml/pages/RecitalDetailPage.qml
+        qml/pages/ArchivePage.qml
+        qml/pages/MetronomePage.qml
+        qml/pages/SettingsPage.qml
+        qml/pages/ReportsPage.qml
+        qml/pages/CsvImportPage.qml
+    RESOURCES
+        data/sounds/s1.wav
+        data/sounds/s2.wav
+        data/sounds/s3.wav
+        data/sounds/reminder.wav
+        data/sounds/lesson-end.wav
+        data/sounds/tuning/a438.wav
+        data/sounds/tuning/a439.wav
+        data/sounds/tuning/a440.wav
+        data/sounds/tuning/a441.wav
+        data/sounds/tuning/a442.wav
+        data/sounds/tuning/a443.wav
+        data/sounds/tuning/a444.wav
+        data/sounds/tuning/a445.wav
+        data/sounds/tuning/b438.wav
+        data/sounds/tuning/b439.wav
+        data/sounds/tuning/b440.wav
+        data/sounds/tuning/b441.wav
+        data/sounds/tuning/b442.wav
+        data/sounds/tuning/b443.wav
+        data/sounds/tuning/b444.wav
+        data/sounds/tuning/b445.wav
+        qupil.png
+)
+
+# Qupil v11 pinned Android deployment properties
+if(ANDROID)
+    set_target_properties(qupil PROPERTIES
+        QT_ANDROID_COMPILE_SDK_VERSION "36"
+        QT_ANDROID_TARGET_SDK_VERSION "36"
+        QT_ANDROID_SDK_BUILD_TOOLS_REVISION "36.0.0"
+    )
+endif()
+
+# Qupil v13 language controller
+target_sources(qupil PRIVATE
+    src/app/languagecontroller.cpp
+    src/app/languagecontroller.h
+)
+
+# Qupil v13 explicit translation resource
+qt_add_resources(qupil "qupil_i18n"
+    PREFIX "/i18n"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/i18n"
+    FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/i18n/qupil_de.qm"
+)
+
+target_link_libraries(qupil PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::QuickControls2
+    Qt6::Sql
+    Qt6::Multimedia
+)
+
+# Qupil only needs SQLite. Importing the Qt-provided driver explicitly keeps
+# desktop/mobile packages self-contained and avoids accidental dependencies on
+# system SQL drivers. Official Qt binary packages ship this plugin.
+if(NOT TARGET Qt6::QSQLiteDriverPlugin)
+    message(FATAL_ERROR "Qt was installed without the QSQLITE driver plugin")
+endif()
+qt_import_plugins(qupil
+    INCLUDE_BY_TYPE sqldrivers Qt6::QSQLiteDriverPlugin
+)
+
+target_compile_definitions(qupil PRIVATE
+    QUPIL_VERSION="${PROJECT_VERSION}"
+)
+
+set_target_properties(qupil PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_BUNDLE_NAME "Qupil"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "org.qupil.app"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+)
+
+if(ANDROID)
+    set_target_properties(qupil PROPERTIES
+        QT_ANDROID_VERSION_CODE 10500
+        QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+        QT_ANDROID_MIN_SDK_VERSION 26
+    )
+    # QT_ANDROID_PACKAGE_NAME was introduced in Qt 6.8. On older supported
+    # Qt releases, the package name falls back to Qt's default unless a
+    # custom Android package template is supplied.
+    if(Qt6_VERSION VERSION_GREATER_EQUAL 6.8)
+        set_target_properties(qupil PROPERTIES
+            QT_ANDROID_PACKAGE_NAME "org.qupil.app"
+        )
+    endif()
+endif()
+
+if(IOS)
+    set_target_properties(qupil PROPERTIES
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "org.qupil.app"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    )
+endif()
+
+if(BUILD_TESTING)
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME source_sanity
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/source_sanity.py")
+        add_test(NAME sql_static_smoke
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/sql_static_smoke.py")
+        add_test(NAME i18n_static_smoke
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/i18n_static_smoke.py")
+        add_test(NAME i18n_catalog_smoke
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/i18n_catalog_smoke.py")
+    endif()
+endif()
+
+if(NOT ANDROID AND NOT IOS)
+    install(TARGETS qupil
+        BUNDLE DESTINATION .
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+    )
+endif()
+
+# Desktop installs get the Qt runtime, QML modules and plugins (including the
+# QSQLITE driver) from Qt's deployment tooling. Android/iOS packaging is done
+# by their respective Qt platform deployment steps.
+if(NOT ANDROID AND NOT IOS)
+    qt_generate_deploy_qml_app_script(
+        TARGET qupil
+        OUTPUT_SCRIPT qupil_deploy_script
+        NO_UNSUPPORTED_PLATFORM_ERROR
+    )
+    install(SCRIPT ${qupil_deploy_script})
+endif()
+
+
+# Desktop packaging uses CMake/CPack on top of Qt's deployment script. This
+# replaces the historic BitRock/InstallBuilder + SVN/SCP release scripts.
+if(NOT ANDROID AND NOT IOS)
+    set(CPACK_PACKAGE_NAME "Qupil")
+    set(CPACK_PACKAGE_VENDOR "Qupil")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_FILE_NAME "Qupil-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}")
+
+    if(WIN32)
+        set(CPACK_GENERATOR "ZIP")
+    elseif(APPLE)
+        set(CPACK_GENERATOR "DragNDrop")
+    else()
+        set(CPACK_GENERATOR "TGZ")
+    endif()
+
+    include(CPack)
+endif()
