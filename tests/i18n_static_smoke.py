@@ -29,7 +29,7 @@ assert all(f'tr("{day}")' in day_body for day in
            ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
 # Imperatively cached QML result sets must reload after C++ models are refreshed.
-assert "target: App" in schedule and "onDataChanged() { root.reload() }" in schedule
+assert "target: App" in schedule and re.search(r"function\s+onDataChanged\(\)\s*\{.*?root\.reload\(\)", schedule, re.S)
 assert "target: Language" in settings and "onEffectiveLanguageChanged() { root.load() }" in settings
 
 # Validate the translated dynamic values seen in the model-based UI.

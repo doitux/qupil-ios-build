@@ -65,6 +65,10 @@ public:
     Q_INVOKABLE QString pupilArchiveHtml(int pupilId) const;
     Q_INVOKABLE bool deleteArchiveEntry(int pupilId);
     Q_INVOKABLE QVariantList pupilLessonMemberships(int pupilId) const;
+    Q_INVOKABLE QVariantMap lessonMembershipContext(int palId) const;
+    Q_INVOKABLE QVariantList notesForMembership(int palId) const;
+    Q_INVOKABLE QVariantList piecesForMembership(int palId) const;
+    Q_INVOKABLE QString noteTemplateText(const QString &content) const;
     Q_INVOKABLE QVariantList notesForPupil(int pupilId) const;
     Q_INVOKABLE QVariantList piecesForPupil(int pupilId) const;
     Q_INVOKABLE QVariantList activitiesForPupil(int pupilId) const;

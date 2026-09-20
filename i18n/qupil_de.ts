@@ -524,6 +524,11 @@
             <translation>Heute</translation>
         </message>
         <message>
+            <location filename="../qml/pages/DashboardPage.qml" line="63" />
+            <source>Total</source>
+            <translation>Gesamt</translation>
+        </message>
+        <message>
             <location filename="../qml/pages/DashboardPage.qml" line="49" />
             <source>Pupils</source>
             <translation>Schüler</translation>
@@ -1865,6 +1870,102 @@
             <source>No lessons on this day</source>
             <translation>An diesem Tag findet kein Unterricht statt.</translation>
         </message>
+        <message>
+            <source>Select a pupil from the schedule</source>
+            <translation>Schüler im Stundenplan auswählen</translation>
+        </message>
+        <message>
+            <source>Saved for all active pupils in this lesson</source>
+            <translation>Wird für alle aktiven Schüler dieses Unterrichts gespeichert</translation>
+        </message>
+        <message>
+            <source>Saved only for this pupil</source>
+            <translation>Wird nur für diesen Schüler gespeichert</translation>
+        </message>
+        <message>
+            <source>Add lesson note</source>
+            <translation>Unterrichtsnotiz hinzufügen</translation>
+        </message>
+        <message>
+            <source>Add music piece</source>
+            <translation>Werk hinzufügen</translation>
+        </message>
+        <message>
+            <source>Add note</source>
+            <translation>Notiz hinzufügen</translation>
+        </message>
+        <message>
+            <source>Add piece</source>
+            <translation>Werk hinzufügen</translation>
+        </message>
+        <message>
+            <source>Back</source>
+            <translation>Zurück</translation>
+        </message>
+        <message>
+            <source>Composer</source>
+            <translation>Komponist</translation>
+        </message>
+        <message>
+            <source>Date (YYYY-MM-DD)</source>
+            <translation>Datum (YYYY-MM-DD)</translation>
+        </message>
+        <message>
+            <source>Duration (minutes)</source>
+            <translation>Dauer (Minuten)</translation>
+        </message>
+        <message>
+            <source>Finished</source>
+            <translation>Beendet</translation>
+        </message>
+        <message>
+            <source>Genre</source>
+            <translation>Genre</translation>
+        </message>
+        <message>
+            <source>In progress</source>
+            <translation>In Arbeit</translation>
+        </message>
+        <message>
+            <source>Lesson details</source>
+            <translation>Unterrichtsdetails</translation>
+        </message>
+        <message>
+            <source>Note</source>
+            <translation>Notiz</translation>
+        </message>
+        <message>
+            <source>Notes</source>
+            <translation>Notizen</translation>
+        </message>
+        <message>
+            <source>Paused</source>
+            <translation>Pause</translation>
+        </message>
+        <message>
+            <source>Pieces</source>
+            <translation>Werke</translation>
+        </message>
+        <message>
+            <source>Planned</source>
+            <translation>Geplant</translation>
+        </message>
+        <message>
+            <source>Pupil</source>
+            <translation>Schüler</translation>
+        </message>
+        <message>
+            <source>Ready for concert</source>
+            <translation>Vorspielreif</translation>
+        </message>
+        <message>
+            <source>State</source>
+            <translation>Status</translation>
+        </message>
+        <message>
+            <source>Title</source>
+            <translation>Titel</translation>
+        </message>
     </context>
     <context>
         <name>SettingsPage</name>
@@ -1896,16 +1997,6 @@
             <location filename="../qml/pages/SettingsPage.qml" line="65" />
             <source>German</source>
             <translation>Deutsch</translation>
-        </message>
-        <message>
-            <location filename="../qml/pages/SettingsPage.qml" line="65" />
-            <source>System language: %1</source>
-            <translation>Systemsprache: %1</translation>
-        </message>
-        <message>
-            <location filename="../qml/pages/SettingsPage.qml" line="65" />
-            <source>Current language: %1</source>
-            <translation>Aktuelle Sprache: %1</translation>
         </message>
         <message>
             <location filename="../qml/pages/SettingsPage.qml" line="82" />

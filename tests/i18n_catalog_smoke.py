@@ -41,7 +41,7 @@ for context in root.findall("context"):
                 f"ellipsis lost: {context_name} :: {source}"
         messages.append((context_name, source, text_values))
 
-assert len(messages) == 386, f"expected curated catalog with 386 messages, got {len(messages)}"
+assert len(messages) == 409, f"expected curated catalog with 409 messages, got {len(messages)}"
 
 # Exact remnants from the rejected word-fallback catalog must never return.
 forbidden_fragments = (
@@ -57,4 +57,4 @@ for context, source, values in messages:
             assert fragment.casefold() not in folded, \
                 f"mixed-language fallback detected: {context} :: {source} -> {value}"
 
-print("PASS: 386 curated German messages; numerus/placeholders/punctuation/mixed-language guards are clean")
+print("PASS: 409 curated German messages; numerus/placeholders/punctuation/mixed-language guards are clean")

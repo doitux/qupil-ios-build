@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(Qupil VERSION 1.5.0 LANGUAGES CXX)
+project(Qupil VERSION 1.5.27 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -127,7 +127,6 @@ qt_import_plugins(qupil
     INCLUDE_BY_TYPE sqldrivers Qt6::QSQLiteDriverPlugin
 )
 
-
 # Qupil iOS: Qt Multimedia FFmpeg frameworks
 # Official Qt iOS binary packages with Multimedia include an FFmpeg backend.
 # Those FFmpeg XCFrameworks must be linked/embedded explicitly on iOS.
@@ -137,8 +136,6 @@ if(IOS)
             "Qupil iOS requires Qt >= 6.8 for qt_add_ios_ffmpeg_libraries() "
             "when using the prebuilt Qt Multimedia package")
     endif()
-    # CI deliberately produces an unsigned .app/.ipa. Do not make Xcode try to
-    # sign the FFmpeg frameworks while copying them into the application bundle.
     set(QT_NO_FFMPEG_XCODE_EMBED_FRAMEWORKS_CODE_SIGN_ON_COPY ON)
     qt_add_ios_ffmpeg_libraries(qupil)
 endif()
@@ -158,7 +155,7 @@ set_target_properties(qupil PROPERTIES
 
 if(ANDROID)
     set_target_properties(qupil PROPERTIES
-        QT_ANDROID_VERSION_CODE 10500
+        QT_ANDROID_VERSION_CODE 10527
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
         QT_ANDROID_MIN_SDK_VERSION 26
     )

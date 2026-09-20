@@ -59,6 +59,35 @@ Page {
         loans = App.loanedMusicForPupil(pupilId)
     }
 
+    function keepEditorCursorVisible(scrollView, editor) {
+        const flick = scrollView.contentItem
+        if (!flick || !editor)
+            return
+        const margin = 8
+        const cursorTop = Math.max(0, editor.cursorRectangle.y - margin)
+        const cursorBottom = editor.cursorRectangle.y + editor.cursorRectangle.height + margin
+        const viewportTop = flick.contentY
+        const viewportBottom = viewportTop + scrollView.availableHeight
+        if (cursorTop < viewportTop) {
+            flick.contentY = cursorTop
+        } else if (cursorBottom > viewportBottom) {
+            const maxY = Math.max(0, flick.contentHeight - scrollView.availableHeight)
+            flick.contentY = Math.min(maxY, cursorBottom - scrollView.availableHeight)
+        }
+    }
+
+    function useNoteAsTemplate(content) {
+        tabs.currentIndex = 1
+        noteText.text = App.noteTemplateText(content || "")
+        Qt.callLater(function() {
+            if (notesScroll.contentItem)
+                notesScroll.contentItem.contentY = 0
+            noteText.forceActiveFocus()
+            noteText.cursorPosition = noteText.text.length
+            root.keepEditorCursorVisible(pupilLessonNoteEditor, noteText)
+        })
+    }
+
     function save() {
         const id = App.savePupil({
             id: pupilId,
@@ -156,6 +185,17 @@ Page {
                     }
 
                     SectionCard {
+                        title: qsTr("Personal event interval")
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 12; Layout.rightMargin: 12
+                        ComboBox {
+                            id: recitalInterval
+                            Layout.fillWidth: true
+                            model: [qsTr("Never"), qsTr("1 month"), qsTr("2 months"), qsTr("3 months"), qsTr("4 months"), qsTr("6 months"), qsTr("9 months"), qsTr("12 months"), qsTr("18 months"), qsTr("24 months")]
+                        }
+                    }
+
+                    SectionCard {
                         title: qsTr("Instrument")
                         Layout.fillWidth: true
                         Layout.leftMargin: 12; Layout.rightMargin: 12
@@ -166,22 +206,15 @@ Page {
                             LabeledField { id: instrumentSize; label: qsTr("Size") }
                             CheckBox { id: needsNextSize; text: qsTr("Next size needed"); Layout.columnSpan: root.width > 720 ? 2 : 1 }
                             CheckBox { id: ensembleExpected; text: qsTr("Participation in ensemble expected"); Layout.columnSpan: root.width > 720 ? 2 : 1 }
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                Label { text: qsTr("Personal event interval"); font.bold: true; opacity: 0.8 }
-                                ComboBox {
-                                    id: recitalInterval
-                                    Layout.fillWidth: true
-                                    model: [qsTr("Never"), qsTr("1 month"), qsTr("2 months"), qsTr("3 months"), qsTr("4 months"), qsTr("6 months"), qsTr("9 months"), qsTr("12 months"), qsTr("18 months"), qsTr("24 months")]
-                                }
-                            }
                         }
-                    }
 
-                    SectionCard {
-                        title: qsTr("Rental instrument")
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 12; Layout.rightMargin: 12
+                        Label {
+                            text: qsTr("Rental instrument")
+                            font.pixelSize: 17
+                            font.bold: true
+                            Layout.fillWidth: true
+                            Layout.topMargin: 10
+                        }
                         CheckBox { id: rentalInstrument; text: qsTr("Pupil has a rental instrument") }
                         GridLayout {
                             columns: root.width > 720 ? 2 : 1
@@ -212,12 +245,26 @@ Page {
                         title: qsTr("Notes")
                         Layout.fillWidth: true
                         Layout.leftMargin: 12; Layout.rightMargin: 12
-                        TextArea {
-                            id: personalNotes
-                            placeholderText: qsTr("Personal notes")
-                            wrapMode: TextArea.Wrap
+                        ScrollView {
+                            id: personalNotesEditor
                             Layout.fillWidth: true
                             Layout.preferredHeight: 130
+                            clip: true
+                            contentWidth: availableWidth
+                            contentHeight: personalNotes.height
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                            TextArea {
+                                id: personalNotes
+                                width: personalNotesEditor.availableWidth
+                                height: Math.max(personalNotesEditor.availableHeight,
+                                                 contentHeight + topPadding + bottomPadding)
+                                placeholderText: qsTr("Personal notes")
+                                wrapMode: TextArea.Wrap
+                                selectByMouse: true
+                                onCursorRectangleChanged: root.keepEditorCursorVisible(personalNotesEditor, personalNotes)
+                            }
                         }
                     }
 
@@ -250,7 +297,27 @@ Page {
                             valueRole: "palId"
                         }
                         LabeledField { id: noteDate; label: qsTr("Date (YYYY-MM-DD)"); text: Qt.formatDate(new Date(), "yyyy-MM-dd") }
-                        TextArea { id: noteText; placeholderText: qsTr("Note"); wrapMode: TextArea.Wrap; Layout.fillWidth: true; Layout.preferredHeight: 110 }
+                        ScrollView {
+                            id: pupilLessonNoteEditor
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 110
+                            clip: true
+                            contentWidth: availableWidth
+                            contentHeight: noteText.height
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                            TextArea {
+                                id: noteText
+                                width: pupilLessonNoteEditor.availableWidth
+                                height: Math.max(pupilLessonNoteEditor.availableHeight,
+                                                 contentHeight + topPadding + bottomPadding)
+                                placeholderText: qsTr("Note")
+                                wrapMode: TextArea.Wrap
+                                selectByMouse: true
+                                onCursorRectangleChanged: root.keepEditorCursorVisible(pupilLessonNoteEditor, noteText)
+                            }
+                        }
                         Button {
                             text: qsTr("Add note")
                             enabled: root.memberships.length > 0 && noteText.text.trim().length > 0
@@ -270,10 +337,22 @@ Page {
                                 anchors.fill: parent
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Label { text: modelData.date + " · " + modelData.lessonName; font.bold: true; Layout.fillWidth: true }
+                                    Label {
+                                        text: modelData.date + " · " + modelData.lessonName
+                                        font.bold: true
+                                        Layout.fillWidth: true
+                                        TapHandler { onTapped: root.useNoteAsTemplate(modelData.content) }
+                                    }
                                     ToolButton { text: "×"; onClicked: { App.deleteNote(modelData.id); root.notes = App.notesForPupil(root.pupilId) } }
                                 }
-                                Label { text: modelData.content; textFormat: Text.RichText; wrapMode: Text.Wrap; color: root.palette.text; Layout.fillWidth: true }
+                                Label {
+                                    text: modelData.content
+                                    textFormat: Text.RichText
+                                    wrapMode: Text.Wrap
+                                    color: root.palette.text
+                                    Layout.fillWidth: true
+                                    TapHandler { onTapped: root.useNoteAsTemplate(modelData.content) }
+                                }
                             }
                         }
                     }

@@ -12,6 +12,7 @@
 #include <QSqlRecord>
 #include <QTime>
 #include <QTemporaryFile>
+#include <QTextDocument>
 #include <QXmlStreamReader>
 #include <QtGlobal>
 #include <algorithm>
@@ -568,6 +569,15 @@ QVariantMap AppController::dashboardStats() const
     const auto one = [this](const QString &sql) -> int {
         return selectOne(sql).value(QStringLiteral("n")).toInt();
     };
+    const int today = QDate::currentDate().dayOfWeek() - 1;
+    result.insert(QStringLiteral("todayLessons"), selectOne(QStringLiteral(
+        "SELECT COUNT(*) AS n FROM lesson WHERE state=1 AND unsteadylesson=0 AND lessonday=?"), {today})
+        .value(QStringLiteral("n")).toInt());
+    result.insert(QStringLiteral("todayPupils"), selectOne(QStringLiteral(
+        "SELECT COUNT(DISTINCT pal.pupilid) AS n FROM lesson l "
+        "JOIN pupilatlesson pal ON pal.lessonid=l.lessonid AND pal.stopdate > date('now') "
+        "WHERE l.state=1 AND l.unsteadylesson=0 AND l.lessonday=?"), {today})
+        .value(QStringLiteral("n")).toInt());
     result.insert(QStringLiteral("pupils"), one(QStringLiteral("SELECT COUNT(*) AS n FROM pupil")));
     result.insert(QStringLiteral("lessons"), one(QStringLiteral("SELECT COUNT(*) AS n FROM lesson WHERE state=1")));
     result.insert(QStringLiteral("reminders"), one(QStringLiteral("SELECT COUNT(*) AS n FROM reminder")));
@@ -597,13 +607,24 @@ QVariantList AppController::scheduleForDay(int day) const
     const auto rows = selectRows(QStringLiteral(
         "SELECT l.lessonid AS id, COALESCE(l.lessonname,'') AS name, COALESCE(l.type,1) AS type, "
         "COALESCE(l.lessonstarttime,'') AS start, COALESCE(l.lessonstoptime,'') AS stop, "
-        "COALESCE(l.lessonlocation,'') AS location, "
-        "COALESCE(GROUP_CONCAT(TRIM(p.forename || ' ' || p.surname), ', '),'') AS pupils "
-        "FROM lesson l LEFT JOIN pupilatlesson pal ON pal.lessonid=l.lessonid AND pal.stopdate > date('now') "
-        "LEFT JOIN pupil p ON p.pupilid=pal.pupilid "
-        "WHERE l.state=1 AND l.unsteadylesson=0 AND l.lessonday=? "
-        "GROUP BY l.lessonid ORDER BY l.lessonstarttime,l.lessonname"), {day});
+        "COALESCE(l.lessonlocation,'') AS location "
+        "FROM lesson l WHERE l.state=1 AND l.unsteadylesson=0 AND l.lessonday=? "
+        "ORDER BY l.lessonstarttime,l.lessonname"), {day});
     for (QVariantMap row : rows) {
+        const auto memberships = selectRows(QStringLiteral(
+            "SELECT pal.palid AS palId, p.pupilid AS pupilId, "
+            "TRIM(COALESCE(p.forename,'') || ' ' || COALESCE(p.surname,'')) AS pupilName "
+            "FROM pupilatlesson pal JOIN pupil p ON p.pupilid=pal.pupilid "
+            "WHERE pal.lessonid=? AND pal.stopdate > date('now') "
+            "ORDER BY p.surname,p.forename,p.pupilid"), {row.value(QStringLiteral("id"))});
+        QVariantList memberList;
+        QStringList pupilNames;
+        for (const QVariantMap &membership : memberships) {
+            memberList << membership;
+            pupilNames << membership.value(QStringLiteral("pupilName")).toString();
+        }
+        row.insert(QStringLiteral("memberships"), memberList);
+        row.insert(QStringLiteral("pupils"), pupilNames.join(QStringLiteral(", ")));
         row.insert(QStringLiteral("typeName"), lessonTypeName(row.value(QStringLiteral("type")).toInt()));
         result.push_back(row);
     }
@@ -955,6 +976,58 @@ QVariantList AppController::pupilLessonMemberships(int pupilId) const
     return result;
 }
 
+QVariantMap AppController::lessonMembershipContext(int palId) const
+{
+    return selectOne(QStringLiteral(
+        "SELECT pal.palid AS palId, pal.pupilid AS pupilId, l.lessonid AS lessonId, "
+        "TRIM(COALESCE(p.forename,'') || ' ' || COALESCE(p.surname,'')) AS pupilName, "
+        "COALESCE(l.lessonname,'') AS lessonName, COALESCE(l.lessonstarttime,'') AS start, "
+        "COALESCE(l.lessonstoptime,'') AS stop, COALESCE(l.lessonlocation,'') AS location, "
+        "COALESCE(l.type,1) AS type "
+        "FROM pupilatlesson pal JOIN pupil p ON p.pupilid=pal.pupilid "
+        "JOIN lesson l ON l.lessonid=pal.lessonid WHERE pal.palid=?"), {palId});
+}
+
+QVariantList AppController::notesForMembership(int palId) const
+{
+    QVariantList result;
+    const auto rows = selectRows(QStringLiteral(
+        "SELECT n.noteid AS id, n.cnoteid AS commonId, n.palid AS palId, "
+        "COALESCE(n.date,'') AS date, COALESCE(n.content,'') AS content "
+        "FROM note n WHERE n.palid=? ORDER BY n.date DESC, n.noteid DESC"), {palId});
+    for (const auto &row : rows)
+        result << row;
+    return result;
+}
+
+QVariantList AppController::piecesForMembership(int palId) const
+{
+    QVariantList result;
+    auto rows = selectRows(QStringLiteral(
+        "SELECT p.pieceid AS id, p.cpieceid AS commonId, p.palid AS palId, COALESCE(pc.composer,'') AS composer, "
+        "COALESCE(p.title,'') AS title, COALESCE(p.genre,'') AS genre, COALESCE(p.duration,0) AS duration, "
+        "COALESCE(p.startdate,'') AS startDate, COALESCE(p.stopdate,'') AS stopDate, COALESCE(p.state,0) AS state "
+        "FROM piece p LEFT JOIN piececomposer pc ON pc.piececomposerid=p.piececomposerid "
+        "WHERE p.palid=? ORDER BY p.startdate DESC, p.pieceid DESC"), {palId});
+    const QStringList states = {tr("Planned"), tr("In progress"), tr("Paused"), tr("Ready for concert"), tr("Finished")};
+    for (auto &row : rows) {
+        const int state = row.value(QStringLiteral("state")).toInt();
+        row.insert(QStringLiteral("stateName"), state >= 0 && state < states.size() ? states.at(state) : tr("Unknown"));
+        result << row;
+    }
+    return result;
+}
+
+QString AppController::noteTemplateText(const QString &content) const
+{
+    if (!Qt::mightBeRichText(content))
+        return content;
+
+    QTextDocument document;
+    document.setHtml(content);
+    return document.toPlainText();
+}
+
 QVariantList AppController::notesForPupil(int pupilId) const
 {
     QVariantList result;
@@ -1083,16 +1156,19 @@ int AppController::addNote(int palId, const QString &date, const QString &conten
 
 bool AppController::deleteNote(int noteId)
 {
-    const bool shareWithLesson = settingValue(QStringLiteral("saveNotesPiecesForAllPupils"), true).toBool();
-    if (shareWithLesson) {
-        const int commonId = selectOne(QStringLiteral("SELECT COALESCE(cnoteid,noteid) AS id FROM note WHERE noteid=?"),
-                                       {noteId}).value(QStringLiteral("id"), noteId).toInt();
-        if (!execute(QStringLiteral("DELETE FROM note WHERE cnoteid=? OR (cnoteid IS NULL AND noteid=?)"),
-                     {commonId, noteId}))
-            return false;
-    } else if (!execute(QStringLiteral("DELETE FROM note WHERE noteid=?"), {noteId})) {
+    const QVariantMap note = selectOne(QStringLiteral(
+        "SELECT COALESCE(cnoteid,noteid) AS commonId FROM note WHERE noteid=?"), {noteId});
+    if (note.isEmpty())
         return false;
-    }
+    const int commonId = note.value(QStringLiteral("commonId"), noteId).toInt();
+    const int linkedRows = selectOne(QStringLiteral(
+        "SELECT COUNT(*) AS n FROM note WHERE cnoteid=?"), {commonId})
+        .value(QStringLiteral("n")).toInt();
+    const bool ok = linkedRows > 1
+        ? execute(QStringLiteral("DELETE FROM note WHERE cnoteid=?"), {commonId})
+        : execute(QStringLiteral("DELETE FROM note WHERE noteid=?"), {noteId});
+    if (!ok)
+        return false;
     emit dataChanged();
     return true;
 }
@@ -1177,16 +1253,19 @@ int AppController::addPiece(int palId, const QString &composer, const QString &t
 
 bool AppController::deletePiece(int pieceId)
 {
-    const bool shareWithLesson = settingValue(QStringLiteral("saveNotesPiecesForAllPupils"), true).toBool();
-    if (shareWithLesson) {
-        const int commonId = selectOne(QStringLiteral("SELECT COALESCE(cpieceid,pieceid) AS id FROM piece WHERE pieceid=?"),
-                                       {pieceId}).value(QStringLiteral("id"), pieceId).toInt();
-        if (!execute(QStringLiteral("DELETE FROM piece WHERE cpieceid=? OR (cpieceid IS NULL AND pieceid=?)"),
-                     {commonId, pieceId}))
-            return false;
-    } else if (!execute(QStringLiteral("DELETE FROM piece WHERE pieceid=?"), {pieceId})) {
+    const QVariantMap piece = selectOne(QStringLiteral(
+        "SELECT COALESCE(cpieceid,pieceid) AS commonId FROM piece WHERE pieceid=?"), {pieceId});
+    if (piece.isEmpty())
         return false;
-    }
+    const int commonId = piece.value(QStringLiteral("commonId"), pieceId).toInt();
+    const int linkedRows = selectOne(QStringLiteral(
+        "SELECT COUNT(*) AS n FROM piece WHERE cpieceid=?"), {commonId})
+        .value(QStringLiteral("n")).toInt();
+    const bool ok = linkedRows > 1
+        ? execute(QStringLiteral("DELETE FROM piece WHERE cpieceid=?"), {commonId})
+        : execute(QStringLiteral("DELETE FROM piece WHERE pieceid=?"), {pieceId});
+    if (!ok)
+        return false;
     emit dataChanged();
     return true;
 }

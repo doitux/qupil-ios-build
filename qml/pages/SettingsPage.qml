@@ -46,38 +46,26 @@ Page {
         contentWidth: availableWidth
 
         ColumnLayout {
-            // Qupil v13 language selection
-            ColumnLayout {
-                id: languageSectionV13
+            width: scroll.availableWidth
+            spacing: 12
+
+            SectionCard {
+                title: qsTr("Language")
                 Layout.fillWidth: true
-                spacing: 6
-                Label { text: qsTr("Language"); font.bold: true; font.pixelSize: 18 }
+                Layout.margins: 12
                 Label { text: qsTr("Interface language"); opacity: 0.8 }
                 ComboBox {
                     id: languageComboV13
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.max(40, implicitHeight)
+                    Layout.preferredHeight: Math.max(44, implicitHeight)
                     model: [qsTr("System language"), qsTr("English"), qsTr("German")]
                     currentIndex: Language.mode === "de" ? 2 : Language.mode === "en" ? 1 : 0
-                    onActivated: { const modes=["system","en","de"]; Language.setMode(modes[currentIndex]) }
+                    onActivated: {
+                        const modes = ["system", "en", "de"]
+                        Language.setMode(modes[currentIndex])
+                    }
                 }
-                Label {
-                    Layout.fillWidth: true; wrapMode: Text.WordWrap; opacity: 0.7
-                    text: Language.mode === "system" ? qsTr("System language: %1").arg(Language.systemLanguage === "de" ? qsTr("German") : qsTr("English")) : qsTr("Current language: %1").arg(Language.effectiveLanguage === "de" ? qsTr("German") : qsTr("English"))
-                }
-                Rectangle { Layout.fillWidth: true; Layout.topMargin: 6; implicitHeight: 1; color: Qt.rgba(1,1,1,0.12) }
             }
-
-
-
-
-
-
-
-
-
-            width: scroll.availableWidth
-            spacing: 12
 
             SectionCard {
                 title: qsTr("Application")
@@ -155,11 +143,13 @@ Page {
         id: restoreConfirm
         title: qsTr("Restore backup")
         modal: true
+        width: Math.max(280, Math.min(root.width - 32, 520))
         standardButtons: Dialog.Ok | Dialog.Cancel
         contentItem: Label {
+            width: Math.max(0, restoreConfirm.availableWidth)
             text: qsTr("Restoring replaces the current data. Qupil creates a local safety copy before the replacement. Continue?")
             wrapMode: Text.WordWrap
-            width: Math.min(root.width - 64, 480)
+            horizontalAlignment: Text.AlignLeft
         }
         onAccepted: restoreDialog.open()
     }

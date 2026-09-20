@@ -1,6 +1,6 @@
-Qupil German translation coverage v17
+Qupil German translation coverage v26
 
-Messages: 386
+Messages: 409
 Word fallback: 0
 Unfinished: 0
 Numerus entries: 1 (2 German forms)
@@ -118,6 +118,7 @@ Complete context :: source -> German catalog:
   DashboardPage :: Pupils -> Schüler
   DashboardPage :: Reminders -> Erinnerungen
   DashboardPage :: Today -> Heute
+  DashboardPage :: Total -> Gesamt
   DashboardPage :: Today's lessons -> Heutiger Unterricht
   EmptyState :: Nothing here yet -> Noch nichts vorhanden
   LessonDetailPage :: Add -> Hinzufügen
@@ -375,7 +376,6 @@ Complete context :: source -> German catalog:
   SettingsPage :: Birthday reminder -> Geburtstagserinnerung aktivieren
   SettingsPage :: Create backup… -> Backup erstellen…
   SettingsPage :: Create Qupil backup -> Qupil-Backup erstellen
-  SettingsPage :: Current language: %1 -> Aktuelle Sprache: %1
   SettingsPage :: Database -> Datenbank
   SettingsPage :: English -> Englisch
   SettingsPage :: German -> Deutsch
@@ -397,4 +397,7 @@ Complete context :: source -> German catalog:
   SettingsPage :: Settings saved -> Einstellungen gespeichert
   SettingsPage :: Share notes and pieces with all active pupils in the selected lesson -> Notizen und Werke für alle aktiven Schüler des ausgewählten Unterrichts gemeinsam speichern
   SettingsPage :: System language -> Systemsprache
-  SettingsPage :: System language: %1 -> Systemsprache: %1
+
+SchedulePage :: Select a pupil from the schedule -> Schüler im Stundenplan auswählen
+SchedulePage :: Saved for all active pupils in this lesson -> Wird für alle aktiven Schüler dieses Unterrichts gespeichert
+SchedulePage :: Saved only for this pupil -> Wird nur für diesen Schüler gespeichert

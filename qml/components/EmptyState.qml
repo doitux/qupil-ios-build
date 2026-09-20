@@ -12,14 +12,16 @@ Item {
     ColumnLayout {
         id: column
         anchors.centerIn: parent
-        width: Math.min(parent.width - 32, 480)
+        width: Math.max(0, Math.min(parent.width - 32, 480))
         spacing: 8
 
         Label {
             text: title
             font.pixelSize: 20
             font.bold: true
+            wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
             Layout.fillWidth: true
         }
         Label {

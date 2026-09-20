@@ -28,45 +28,96 @@ Page {
             spacing: 16
             anchors.margins: 16
 
-            Label {
-                text: qsTr("Today")
-                font.pixelSize: 30
-                font.bold: true
-                Layout.leftMargin: 16
-                Layout.topMargin: 18
-            }
-
             GridLayout {
-                columns: root.width > 760 ? 5 : (root.width > 480 ? 3 : 2)
-                rowSpacing: 10
-                columnSpacing: 10
+                columns: root.width >= 900 ? 2 : 1
+                rowSpacing: 14
+                columnSpacing: 14
                 Layout.fillWidth: true
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
+                Layout.topMargin: 18
 
-                Repeater {
-                    model: [
-                        [qsTr("Pupils"), root.stats.pupils || 0],
-                        [qsTr("Lessons"), root.stats.lessons || 0],
-                        [qsTr("Reminders"), root.stats.reminders || 0],
-                        [qsTr("Loaned scores"), root.stats.loanedMusic || 0],
-                        [qsTr("Events"), root.stats.recitals || 0]
-                    ]
-                    delegate: Pane {
-                        required property int index
-
-                        required property var modelData
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 92
-                        ColumnLayout {
-                            anchors.fill: parent
-                            Label { text: modelData[1]; font.pixelSize: 28; font.bold: true }
-                            Label { text: modelData[0]; opacity: 0.7; elide: Text.ElideRight; Layout.fillWidth: true }
+                Pane {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignTop
+                    padding: 16
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 12
+                        Label {
+                            text: qsTr("Today")
+                            font.pixelSize: 24
+                            font.bold: true
+                            Layout.fillWidth: true
                         }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: if (index === 0) root.openPupils()
+                        GridLayout {
+                            columns: 2
+                            columnSpacing: 10
+                            rowSpacing: 10
+                            Layout.fillWidth: true
+                            Repeater {
+                                model: [
+                                    [qsTr("Pupils"), root.stats.todayPupils || 0],
+                                    [qsTr("Lessons"), root.stats.todayLessons || 0]
+                                ]
+                                delegate: Pane {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 92
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        Label { text: modelData[1]; font.pixelSize: 28; font.bold: true }
+                                        Label { text: modelData[0]; opacity: 0.7; Layout.fillWidth: true; elide: Text.ElideRight }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Pane {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignTop
+                    padding: 16
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 12
+                        Label {
+                            text: qsTr("Total")
+                            font.pixelSize: 24
+                            font.bold: true
+                            Layout.fillWidth: true
+                        }
+                        GridLayout {
+                            columns: root.width >= 1180 ? 3 : (root.width >= 520 ? 2 : 1)
+                            columnSpacing: 10
+                            rowSpacing: 10
+                            Layout.fillWidth: true
+                            Repeater {
+                                model: [
+                                    [qsTr("Pupils"), root.stats.pupils || 0],
+                                    [qsTr("Lessons"), root.stats.lessons || 0],
+                                    [qsTr("Reminders"), root.stats.reminders || 0],
+                                    [qsTr("Loaned scores"), root.stats.loanedMusic || 0],
+                                    [qsTr("Events"), root.stats.recitals || 0]
+                                ]
+                                delegate: Pane {
+                                    required property int index
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 92
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        Label { text: modelData[1]; font.pixelSize: 28; font.bold: true }
+                                        Label { text: modelData[0]; opacity: 0.7; Layout.fillWidth: true; elide: Text.ElideRight }
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: if (index === 0) root.openPupils()
+                                    }
+                                }
+                            }
                         }
                     }
                 }

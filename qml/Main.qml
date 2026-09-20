@@ -16,6 +16,7 @@ id: root
 
     property bool compact: width < 820
     property string pageTitle: qsTr("Overview")
+    property int currentNavigationIndex: 0
     property string lastRuntimeMinute: ""
     property var notificationQueue: []
     property var activeNotification: ({})
@@ -64,21 +65,21 @@ id: root
         checkRuntimeNotifications(true)
     }
 
-    function showDashboard() { pageTitle = qsTr("Overview"); stack.replace(dashboardComponent); drawer.close() }
-    function showSchedule() { pageTitle = qsTr("Schedule"); stack.replace(scheduleComponent); drawer.close() }
-    function showPupils() { pageTitle = qsTr("Pupils"); stack.replace(pupilsComponent); drawer.close() }
-    function showPupil(id) { pageTitle = id < 0 ? qsTr("New pupil") : qsTr("Pupil"); stack.replace(pupilDetailComponent, { pupilId: id }); drawer.close() }
-    function showLessons() { pageTitle = qsTr("Lessons"); stack.replace(lessonsComponent); drawer.close() }
-    function showLesson(id) { pageTitle = id < 0 ? qsTr("New lesson") : qsTr("Lesson"); stack.replace(lessonDetailComponent, { lessonId: id }); drawer.close() }
-    function showReminders() { pageTitle = qsTr("Reminders"); stack.replace(remindersComponent); drawer.close() }
-    function showLibrary() { pageTitle = qsTr("Music library"); stack.replace(libraryComponent); drawer.close() }
-    function showRecitals() { pageTitle = qsTr("Events"); stack.replace(recitalsComponent); drawer.close() }
-    function showRecital(id) { pageTitle = id < 0 ? qsTr("New event") : qsTr("Event"); stack.replace(recitalDetailComponent, { recitalId: id }); drawer.close() }
-    function showArchive() { pageTitle = qsTr("Pupil archive"); stack.replace(archiveComponent); drawer.close() }
-    function showMetronome() { pageTitle = qsTr("Metronome"); stack.replace(metronomeComponent); drawer.close() }
-    function showSettings() { pageTitle = qsTr("Settings"); stack.replace(settingsComponent); drawer.close() }
-    function showReports() { pageTitle = qsTr("Checks & reports"); stack.replace(reportsComponent); drawer.close() }
-    function showCsvImport() { pageTitle = qsTr("CSV import"); stack.replace(csvImportComponent); drawer.close() }
+    function showDashboard() { currentNavigationIndex = 0; pageTitle = qsTr("Overview"); stack.replace(dashboardComponent); drawer.close() }
+    function showSchedule() { currentNavigationIndex = 1; pageTitle = qsTr("Schedule"); stack.replace(scheduleComponent); drawer.close() }
+    function showPupils() { currentNavigationIndex = 2; pageTitle = qsTr("Pupils"); stack.replace(pupilsComponent); drawer.close() }
+    function showPupil(id) { currentNavigationIndex = 2; pageTitle = id < 0 ? qsTr("New pupil") : qsTr("Pupil"); stack.replace(pupilDetailComponent, { pupilId: id }); drawer.close() }
+    function showLessons() { currentNavigationIndex = 3; pageTitle = qsTr("Lessons"); stack.replace(lessonsComponent); drawer.close() }
+    function showLesson(id) { currentNavigationIndex = 3; pageTitle = id < 0 ? qsTr("New lesson") : qsTr("Lesson"); stack.replace(lessonDetailComponent, { lessonId: id }); drawer.close() }
+    function showReminders() { currentNavigationIndex = 6; pageTitle = qsTr("Reminders"); stack.replace(remindersComponent); drawer.close() }
+    function showLibrary() { currentNavigationIndex = 5; pageTitle = qsTr("Music library"); stack.replace(libraryComponent); drawer.close() }
+    function showRecitals() { currentNavigationIndex = 4; pageTitle = qsTr("Events"); stack.replace(recitalsComponent); drawer.close() }
+    function showRecital(id) { currentNavigationIndex = 4; pageTitle = id < 0 ? qsTr("New event") : qsTr("Event"); stack.replace(recitalDetailComponent, { recitalId: id }); drawer.close() }
+    function showArchive() { currentNavigationIndex = 7; pageTitle = qsTr("Pupil archive"); stack.replace(archiveComponent); drawer.close() }
+    function showMetronome() { currentNavigationIndex = 8; pageTitle = qsTr("Metronome"); stack.replace(metronomeComponent); drawer.close() }
+    function showSettings() { currentNavigationIndex = 10; pageTitle = qsTr("Settings"); stack.replace(settingsComponent); drawer.close() }
+    function showReports() { currentNavigationIndex = 9; pageTitle = qsTr("Checks & reports"); stack.replace(reportsComponent); drawer.close() }
+    function showCsvImport() { currentNavigationIndex = 10; pageTitle = qsTr("CSV import"); stack.replace(csvImportComponent); drawer.close() }
 
     header: ToolBar {
         RowLayout {
@@ -144,11 +145,48 @@ id: root
                     [qsTr("Settings"), "⚙"]
                 ]
                 delegate: ItemDelegate {
+                    id: navigationItem
                     required property int index
-
                     required property var modelData
-                    text: modelData[1] + "   " + modelData[0]
+
+                    property bool active: root.currentNavigationIndex === index
+
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 46
+                    leftPadding: 8
+                    rightPadding: 8
+                    topPadding: 4
+                    bottomPadding: 4
+
+                    background: Rectangle {
+                        radius: 6
+                        color: navigationItem.active
+                               ? root.palette.highlight
+                               : (navigationItem.hovered ? root.palette.midlight : "transparent")
+                        opacity: navigationItem.active ? 0.82 : (navigationItem.hovered ? 0.35 : 1.0)
+                    }
+
+                    contentItem: RowLayout {
+                        spacing: 10
+                        Label {
+                            text: navigationItem.modelData[1]
+                            Layout.preferredWidth: 26
+                            Layout.minimumWidth: 26
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            color: navigationItem.active ? root.palette.highlightedText : root.palette.text
+                            font.pixelSize: 17
+                        }
+                        Label {
+                            text: navigationItem.modelData[0]
+                            Layout.fillWidth: true
+                            verticalAlignment: Text.AlignVCenter
+                            color: navigationItem.active ? root.palette.highlightedText : root.palette.text
+                            font.pixelSize: 16
+                            elide: Text.ElideRight
+                        }
+                    }
+
                     onClicked: {
                         switch (index) {
                         case 0: root.showDashboard(); break
@@ -279,7 +317,7 @@ id: root
     }
 
     Component { id: dashboardComponent; DashboardPage { onOpenPupils: root.showPupils(); onOpenLesson: id => root.showLesson(id) } }
-    Component { id: scheduleComponent; SchedulePage { onEditLesson: id => root.showLesson(id) } }
+    Component { id: scheduleComponent; SchedulePage { onEditLesson: id => root.showLesson(id); onEditPupil: id => root.showPupil(id) } }
     Component { id: pupilsComponent; PupilsPage { onEditPupil: id => root.showPupil(id) } }
     Component { id: pupilDetailComponent; PupilDetailPage { onDone: root.showPupils() } }
     Component { id: lessonsComponent; LessonsPage { onEditLesson: id => root.showLesson(id) } }
