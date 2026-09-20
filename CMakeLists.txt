@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
 include(CTest)
+include(GNUInstallDirs)
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS
     Core
@@ -175,6 +176,36 @@ if(IOS)
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
     )
 endif()
+
+
+# Qupil v27-r8 native application icons
+if(ANDROID)
+    set_target_properties(qupil PROPERTIES
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
+        QT_ANDROID_APP_NAME "Qupil"
+        QT_ANDROID_APP_ICON "@mipmap/ic_launcher"
+    )
+endif()
+
+if(IOS)
+    set(QUPIL_IOS_ASSET_CATALOG "${CMAKE_CURRENT_SOURCE_DIR}/ios/Assets.xcassets")
+    target_sources(qupil PRIVATE "${QUPIL_IOS_ASSET_CATALOG}")
+    set_source_files_properties(
+        "${QUPIL_IOS_ASSET_CATALOG}"
+        PROPERTIES MACOSX_PACKAGE_LOCATION Resources
+    )
+    set_target_properties(qupil PROPERTIES
+        XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+    )
+endif()
+
+if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT IOS)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/qupil.desktop"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/qupil.svg"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps")
+endif()
+# End Qupil v27-r8 native application icons
 
 if(BUILD_TESTING)
     find_package(Python3 QUIET COMPONENTS Interpreter)

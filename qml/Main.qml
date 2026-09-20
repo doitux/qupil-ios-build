@@ -205,13 +205,26 @@ id: root
                 }
             }
             Item { Layout.fillHeight: true }
-            Label {
-                text: qsTr("Database: %1").arg(App.databasePath)
-                wrapMode: Text.WrapAnywhere
-                opacity: 0.55
-                font.pixelSize: 11
+            ColumnLayout {
                 Layout.fillWidth: true
-                Layout.margins: 12
+                Layout.leftMargin: 12
+                Layout.rightMargin: 12
+                Layout.bottomMargin: 12
+                spacing: 3
+
+                Label {
+                    text: qsTr("Database: %1").arg(App.databasePath)
+                    wrapMode: Text.WrapAnywhere
+                    opacity: 0.55
+                    font.pixelSize: 11
+                    Layout.fillWidth: true
+                }
+                Label {
+                    text: "Qupil " + Qt.application.version + " · v27-r8"
+                    opacity: 0.62
+                    font.pixelSize: 11
+                    Layout.fillWidth: true
+                }
             }
         }
     }
