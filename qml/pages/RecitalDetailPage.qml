@@ -95,6 +95,14 @@ Page {
                     title: qsTr("Program")
                     visible: recitalId >= 0
                     Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 12
+                    Button {
+                        text: qsTr("Document ...")
+                        onClicked: recitalPreview.showDocument(
+                            App.recitalDocumentHtml(root.recitalId),
+                            qsTr("Program overview for events"),
+                            eventDescription.text + "_" + eventLocation.text + "_" + eventDate.text,
+                            true)
+                    }
                     Label { visible: root.eventPieces.length === 0; text: qsTr("No pieces in the program yet."); opacity: 0.65 }
                     Repeater {
                         model: root.eventPieces
@@ -170,6 +178,8 @@ Page {
             }
         }
     }
+
+    DocumentPreviewDialog { id: recitalPreview }
 
     Dialog {
         id: finishDialog

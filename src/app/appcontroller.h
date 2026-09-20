@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QObject>
+#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QUrl>
@@ -57,6 +58,20 @@ public:
     Q_INVOKABLE QVariantMap instrumentOverview() const;
     Q_INVOKABLE QVariantList overdueRecitalPupils() const;
     Q_INVOKABLE QVariantList pupilsWithoutEnsemble() const;
+
+    Q_INVOKABLE QString timetableDocumentHtml() const;
+    Q_INVOKABLE QString dayOverviewDocumentHtml(int day, int noteCount = 3, int freeSpaceCm = 2) const;
+    Q_INVOKABLE QString recitalDocumentHtml(int recitalId) const;
+    Q_INVOKABLE QString rentalInstrumentDocumentHtml() const;
+    Q_INVOKABLE QUrl suggestedPdfUrl(const QString &baseName) const;
+    Q_INVOKABLE bool exportDocumentPdf(const QString &html, const QUrl &destination,
+                                        const QString &title, bool landscape = false);
+    Q_INVOKABLE bool shareDocumentPdf(const QString &html, const QString &baseName,
+                                       const QString &title, bool landscape = false);
+    Q_INVOKABLE QStringList availablePrinters() const;
+    Q_INVOKABLE QString defaultPrinterName() const;
+    Q_INVOKABLE bool printDocument(const QString &html, const QString &printerName,
+                                    const QString &title, bool landscape = false);
 
     Q_INVOKABLE QVariantMap pupil(int pupilId) const;
     Q_INVOKABLE int savePupil(const QVariantMap &values);

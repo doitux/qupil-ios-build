@@ -98,12 +98,35 @@ id: root
                 Layout.fillWidth: true
             }
             ToolButton {
+                text: root.compact ? "⋮" : qsTr("Document")
+                Accessible.name: qsTr("Document")
+                onClicked: documentMenu.open()
+                Menu {
+                    id: documentMenu
+                    MenuItem { action: dailyScheduleDocumentAction }
+                    MenuItem {
+                        text: qsTr("Timetable Document ...")
+                        onTriggered: documentPreview.showDocument(App.timetableDocumentHtml(), qsTr("Timetable"), "", false)
+                    }
+                }
+            }
+            ToolButton {
                 text: "↻"
                 Accessible.name: qsTr("Refresh")
                 onClicked: App.refreshAll()
             }
         }
     }
+
+    Action {
+        id: dailyScheduleDocumentAction
+        text: qsTr("Daily Schedule ...")
+        shortcut: "Ctrl+D"
+        onTriggered: dailyScheduleDialog.open()
+    }
+
+    DocumentPreviewDialog { id: documentPreview }
+    DailyScheduleDialog { id: dailyScheduleDialog; previewDialog: documentPreview }
 
     Drawer {
         id: drawer
@@ -220,7 +243,7 @@ id: root
                     Layout.fillWidth: true
                 }
                 Label {
-                    text: "Qupil " + Qt.application.version + " · v27-r8"
+                    text: "Qupil " + Qt.application.version + " · v28-r2"
                     opacity: 0.62
                     font.pixelSize: 11
                     Layout.fillWidth: true

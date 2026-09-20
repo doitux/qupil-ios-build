@@ -20,6 +20,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName(QStringLiteral("Qupil"));
     QCoreApplication::setApplicationVersion(QStringLiteral(QUPIL_VERSION));
     app.setWindowIcon(QIcon(QStringLiteral(":/qt/qml/Qupil/qupil.png")));
+    app.setApplicationDisplayName(QStringLiteral("Qupil"));
 
     // Install the selected translator before AppController is constructed.
     // AppController populates translated model roles in its constructor, so the

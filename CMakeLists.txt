@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(Qupil VERSION 1.5.27 LANGUAGES CXX)
+project(Qupil VERSION 1.5.28 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,7 +35,25 @@ qt_add_executable(qupil
     src/app/appcontroller.h
     src/app/metronomecontroller.cpp
     src/app/metronomecontroller.h
+    src/app/native_share.h
 )
+
+
+# Qupil v28 PDF sharing
+if(IOS)
+    enable_language(OBJCXX)
+    target_sources(qupil PRIVATE src/app/native_share_ios.mm)
+    set_source_files_properties(src/app/native_share_ios.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(qupil PRIVATE "-framework UIKit")
+else()
+    target_sources(qupil PRIVATE src/app/native_share.cpp)
+endif()
+
+if(NOT ANDROID AND NOT IOS)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS PrintSupport)
+    target_link_libraries(qupil PRIVATE Qt6::PrintSupport)
+    target_compile_definitions(qupil PRIVATE QUPIL_DESKTOP_PRINTING=1)
+endif()
 
 qt_add_qml_module(qupil
     URI Qupil
@@ -45,6 +63,9 @@ qt_add_qml_module(qupil
         qml/components/SectionCard.qml
         qml/components/EmptyState.qml
         qml/components/LabeledField.qml
+        qml/components/DocumentActions.qml
+        qml/components/DocumentPreviewDialog.qml
+        qml/components/DailyScheduleDialog.qml
         qml/pages/DashboardPage.qml
         qml/pages/SchedulePage.qml
         qml/pages/PupilsPage.qml
@@ -156,7 +177,7 @@ set_target_properties(qupil PROPERTIES
 
 if(ANDROID)
     set_target_properties(qupil PROPERTIES
-        QT_ANDROID_VERSION_CODE 10527
+        QT_ANDROID_VERSION_CODE 10528
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
         QT_ANDROID_MIN_SDK_VERSION 26
     )
@@ -195,6 +216,9 @@ if(IOS)
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources
     )
     set_target_properties(qupil PROPERTIES
+        MACOSX_BUNDLE_BUNDLE_NAME "Qupil"
+        XCODE_ATTRIBUTE_PRODUCT_NAME "Qupil"
+        XCODE_ATTRIBUTE_INFOPLIST_KEY_CFBundleDisplayName "Qupil"
         XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
     )
 endif()

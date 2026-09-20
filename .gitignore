@@ -10,3 +10,12 @@ compile_commands.json
 .DS_Store
 *.user
 *.user.*
+
+# --- Local Qupil development state ---
+CMakeLists.txt.user*
+*.user
+*.user.*
+.qmlcache/
+.cache/
+.DS_Store
+# Build directories live outside this repository in ../qupil-build-env/build/.

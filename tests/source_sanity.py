@@ -22,6 +22,8 @@ assert "Qt6::Sql" in cmake and "Qt6::Multimedia" in cmake
 assert "Qt6::QSQLiteDriverPlugin" in cmake, "QSQLITE plugin must be explicitly packaged"
 assert "INCLUDE_BY_TYPE sqldrivers" in cmake
 assert "Qt6::Widgets" not in cmake
+assert "Qt6::PrintSupport" in cmake, "desktop printing must use Qt PrintSupport without Qt Widgets"
+assert "Qt6::PrintSupport" in cmake, "desktop printing must use Qt PrintSupport without Qt Widgets"
 
 # The application may use Qt SQL's QSQLITE driver, but must not use/link the
 # sqlite3 C API directly. Audio must be Qt Multimedia only, with no SDL build

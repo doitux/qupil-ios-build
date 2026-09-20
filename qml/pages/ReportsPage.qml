@@ -101,6 +101,11 @@ Page {
                 title: qsTr("Instrument overview")
                 Layout.fillWidth: true
                 Layout.leftMargin: 12; Layout.rightMargin: 12; Layout.bottomMargin: 12
+                Button {
+                    text: qsTr("Rental Instruments Inventory List ...")
+                    onClicked: rentalPreview.showDocument(App.rentalInstrumentDocumentHtml(),
+                                                          qsTr("Rental instrument inventory list"), "", false)
+                }
 
                 RowLayout {
                     Label { text: qsTr("Rental instruments: %1").arg(root.instrumentData.rentalCount); font.bold: true }
@@ -133,6 +138,8 @@ Page {
             }
         }
     }
+
+    DocumentPreviewDialog { id: rentalPreview }
 
     Popup { id: reminderSaved; anchors.centerIn: parent; Label { text: qsTr("Reminder added") } }
 }

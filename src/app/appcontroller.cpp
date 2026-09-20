@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "appcontroller.h"
+#include "native_share.h"
 
 #include <QDate>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLocale>
+#include <QPageLayout>
+#include <QPageSize>
+#include <QPdfWriter>
+#include <QStandardPaths>
 #include <QSettings>
+#include <QRegularExpression>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QSqlRecord>
@@ -15,6 +23,10 @@
 #include <QTextDocument>
 #include <QXmlStreamReader>
 #include <QtGlobal>
+#ifdef QUPIL_DESKTOP_PRINTING
+#include <QPrinter>
+#include <QPrinterInfo>
+#endif
 #include <algorithm>
 #include <iterator>
 #include <utility>
@@ -28,6 +40,70 @@ QString isoToday()
 QString htmlCell(const QVariant &value)
 {
     return value.toString().toHtmlEscaped();
+}
+
+QString formattedIsoDate(const QString &value)
+{
+    const QDate date = QDate::fromString(value, Qt::ISODate);
+    return date.isValid() ? date.toString(QStringLiteral("dd.MM.yyyy")) : value;
+}
+
+QString documentCss()
+{
+    return QStringLiteral(
+        "body{font-family:sans-serif;color:#202124;font-size:10pt;}"
+        "h1{font-size:20pt;margin:0 0 4mm 0;}h2{font-size:14pt;margin:5mm 0 2mm 0;}"
+        "p.meta{color:#555;margin:0 0 4mm 0;}table{width:100%;border-collapse:collapse;}"
+        "th{background:#e8eef2;text-align:left;font-weight:600;}th,td{border:1px solid #9aa0a6;padding:2.2mm;vertical-align:top;}"
+        "tr:nth-child(even) td{background:#f8f9fa;} .day{background:#3d84a8;color:white;padding:2mm 3mm;margin-top:4mm;}"
+        ".footer{margin-top:6mm;color:#666;font-size:8pt;text-align:center;}"
+        ".notes{font-size:9pt;} .writing{height:9mm;border-bottom:1px solid #c4c7c5;}"
+        ".noborder td,.noborder th{border:0;background:transparent;padding:1mm;}"
+    );
+}
+
+QString documentFrame(const QString &title, const QString &body)
+{
+    return QStringLiteral("<!doctype html><html><head><meta charset='utf-8'><style>%1</style></head><body>"
+                          "<h1>%2</h1>%3<div class='footer'>Qupil %4 - %5</div></body></html>")
+        .arg(documentCss(), title.toHtmlEscaped(), body,
+             QCoreApplication::applicationVersion().toHtmlEscaped(),
+             QStringLiteral("&copy;2006-%1 - Felix Hammer - qupil.de").arg(QDate::currentDate().year()));
+}
+
+QString safePdfBaseName(QString value)
+{
+    value = value.trimmed();
+    if (value.isEmpty())
+        value = QStringLiteral("Qupil");
+    value.replace(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]+")), QStringLiteral("_"));
+    if (!value.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive))
+        value += QStringLiteral(".pdf");
+    return value;
+}
+
+bool writeHtmlPdf(const QString &html, const QString &filePath, const QString &title,
+                  bool landscape, QString *error)
+{
+    QDir().mkpath(QFileInfo(filePath).absolutePath());
+    QPdfWriter writer(filePath);
+    writer.setTitle(title);
+    writer.setCreator(QStringLiteral("Qupil %1").arg(QCoreApplication::applicationVersion()));
+    writer.setResolution(300);
+    writer.setPageSize(QPageSize(QPageSize::A4));
+    writer.setPageOrientation(landscape ? QPageLayout::Landscape : QPageLayout::Portrait);
+    writer.setPageMargins(QMarginsF(10, 12, 10, 12), QPageLayout::Millimeter);
+
+    QTextDocument document;
+    document.setHtml(html);
+    document.print(&writer);
+    QFileInfo info(filePath);
+    if (!info.exists() || info.size() <= 0) {
+        if (error)
+            *error = QCoreApplication::translate("AppController", "The PDF file could not be created.");
+        return false;
+    }
+    return true;
 }
 }
 
@@ -631,6 +707,332 @@ QVariantList AppController::scheduleForDay(int day) const
     return result;
 }
 
+QString AppController::timetableDocumentHtml() const
+{
+    const QStringList days = {tr("Monday"), tr("Tuesday"), tr("Wednesday"), tr("Thursday"),
+                              tr("Friday"), tr("Saturday"), tr("Sunday"), tr("irregular")};
+    QString rowsHtml;
+    for (int day = 0; day < 8; ++day) {
+        QVector<QVariantMap> lessons;
+        if (day < 7) {
+            lessons = selectRows(QStringLiteral(
+                "SELECT lessonid AS id, COALESCE(lessonname,'') AS name, COALESCE(lessonstarttime,'') AS start, "
+                "COALESCE(lessonstoptime,'') AS stop FROM lesson WHERE state=1 AND lessonday=? ORDER BY lessonstarttime ASC"), {day});
+        } else {
+            lessons = selectRows(QStringLiteral(
+                "SELECT lessonid AS id, COALESCE(lessonname,'') AS name FROM lesson WHERE state=1 AND unsteadylesson=1"));
+        }
+        if (lessons.isEmpty())
+            continue;
+        rowsHtml += QStringLiteral("<tr><td colspan='3'><h2>%1</h2></td></tr>").arg(days.at(day).toHtmlEscaped());
+        for (const QVariantMap &lesson : lessons) {
+            const auto pupils = selectRows(QStringLiteral(
+                "SELECT COALESCE(p.surname,'') AS surname, COALESCE(p.forename,'') AS forename "
+                "FROM pupilatlesson pal, pupil p WHERE pal.lessonid=? AND p.pupilid=pal.pupilid "
+                "AND pal.stopdate > date('now') ORDER BY p.surname ASC"), {lesson.value(QStringLiteral("id"))});
+            QStringList names;
+            for (const QVariantMap &pupil : pupils)
+                names << QStringLiteral("%1, %2").arg(pupil.value(QStringLiteral("surname")).toString().toHtmlEscaped(),
+                                                      pupil.value(QStringLiteral("forename")).toString().toHtmlEscaped());
+            if (day < 7) {
+                rowsHtml += QStringLiteral("<tr><td><b>%1 - %2</b></td><td>%3</td><td>%4</td></tr>")
+                    .arg(htmlCell(lesson.value(QStringLiteral("start"))), htmlCell(lesson.value(QStringLiteral("stop"))),
+                         htmlCell(lesson.value(QStringLiteral("name"))), names.join(QStringLiteral("<br>")));
+            } else {
+                rowsHtml += QStringLiteral("<tr><td colspan='2'><b>%1</b></td><td>%2</td></tr>")
+                    .arg(htmlCell(lesson.value(QStringLiteral("name"))), names.join(QStringLiteral("<br>")));
+            }
+        }
+    }
+    const QString title = QStringLiteral("Qupil %1 - %2")
+        .arg(QCoreApplication::applicationVersion().toHtmlEscaped(), tr("Timetable").toHtmlEscaped());
+    const QString body = QStringLiteral("<p class='meta'><b>%1</b> %2</p><table><tr><th>%3</th><th>%4</th><th>%5</th></tr>%6</table>")
+        .arg(tr("Status: ").toHtmlEscaped(), QDate::currentDate().toString(QStringLiteral("dd.MM.yyyy")),
+             tr("Time").toHtmlEscaped(), tr("Lesson").toHtmlEscaped(), tr("Pupil").toHtmlEscaped(), rowsHtml);
+    return documentFrame(title, body);
+}
+
+QString AppController::dayOverviewDocumentHtml(int day, int noteCount, int freeSpaceCm) const
+{
+    day = std::clamp(day, 0, 7);
+    noteCount = std::clamp(noteCount, 0, 99);
+    freeSpaceCm = std::clamp(freeSpaceCm, 0, 99);
+
+    QString dayString;
+    QString tableHead;
+    QVector<QVariantMap> lessons;
+    if (day < 7) {
+        QDate date = QDate::currentDate();
+        const int today = date.dayOfWeek() - 1;
+        int delta = day - today;
+        if (delta < 0) delta += 7;
+        date = date.addDays(delta);
+        dayString = QLocale().toString(date, QLocale::LongFormat);
+        tableHead = QStringLiteral("<tr><th>%1</th><th>%2</th><th>%3</th></tr>")
+            .arg(tr("Time").toHtmlEscaped(), tr("Lesson").toHtmlEscaped(), tr("Pupil").toHtmlEscaped());
+        lessons = selectRows(QStringLiteral(
+            "SELECT lessonid AS id, COALESCE(lessonname,'') AS name, COALESCE(lessonstarttime,'') AS start, "
+            "COALESCE(lessonstoptime,'') AS stop FROM lesson WHERE state=1 AND lessonday=? ORDER BY lessonstarttime ASC"), {day});
+    } else {
+        dayString = tr("irregular dates");
+        tableHead = QStringLiteral("<tr><th>%1</th><th>%2</th></tr>")
+            .arg(tr("Lesson").toHtmlEscaped(), tr("Pupil").toHtmlEscaped());
+        lessons = selectRows(QStringLiteral(
+            "SELECT lessonid AS id, COALESCE(lessonname,'') AS name FROM lesson WHERE state=1 AND unsteadylesson=1"));
+    }
+
+    QString rowsHtml;
+    for (const QVariantMap &lesson : lessons) {
+        const auto pupils = selectRows(QStringLiteral(
+            "SELECT pal.palid AS palId, COALESCE(p.forename,'') AS forename, COALESCE(p.surname,'') AS surname "
+            "FROM pupilatlesson pal, pupil p WHERE pal.lessonid=? AND p.pupilid=pal.pupilid "
+            "AND pal.stopdate > date('now') ORDER BY p.surname ASC"), {lesson.value(QStringLiteral("id"))});
+        QStringList names;
+        QList<int> palIds;
+        for (const QVariantMap &pupil : pupils) {
+            palIds << pupil.value(QStringLiteral("palId")).toInt();
+            names << QStringLiteral("%1, %2").arg(pupil.value(QStringLiteral("surname")).toString().toHtmlEscaped(),
+                                                  pupil.value(QStringLiteral("forename")).toString().toHtmlEscaped());
+        }
+        if (day < 7)
+            rowsHtml += QStringLiteral("<tr><td><h3>%1 - %2</h3></td><td><h3>%3</h3></td><td>%4</td></tr>")
+                .arg(htmlCell(lesson.value(QStringLiteral("start"))), htmlCell(lesson.value(QStringLiteral("stop"))),
+                     htmlCell(lesson.value(QStringLiteral("name"))), names.join(QStringLiteral("<br>")));
+        else
+            rowsHtml += QStringLiteral("<tr><td><h3>%1</h3></td><td>%2</td></tr>")
+                .arg(htmlCell(lesson.value(QStringLiteral("name"))), names.join(QStringLiteral("<br>")));
+
+        rowsHtml += day < 7 ? QStringLiteral("<tr><td colspan='3'>") : QStringLiteral("<tr><td colspan='2'>");
+        if (freeSpaceCm > 0)
+            rowsHtml += QStringLiteral("<div style='height:%1mm;border-bottom:1px solid #999;margin-bottom:2mm'></div>")
+                .arg(freeSpaceCm * 10);
+
+        const bool shared = settingValue(QStringLiteral("saveNotesPiecesForAllPupils"), true).toBool();
+        if (noteCount > 0 && !palIds.isEmpty()) {
+            rowsHtml += QStringLiteral("<table class='noborder notes'>");
+            if (shared) {
+                const auto notes = selectRows(QStringLiteral(
+                    "SELECT strftime('%d.%m.%Y',n.date) AS date, COALESCE(n.content,'') AS content "
+                    "FROM note n, pupilatlesson pal WHERE pal.palid=? AND pal.palid=n.palid "
+                    "AND pal.startdate <= n.date AND pal.stopdate >= n.date ORDER BY n.date DESC LIMIT ?"),
+                    {palIds.last(), noteCount});
+                for (const QVariantMap &note : notes)
+                    rowsHtml += QStringLiteral("<tr><td><u>%1</u>:</td><td>%2</td></tr>")
+                        .arg(htmlCell(note.value(QStringLiteral("date"))), note.value(QStringLiteral("content")).toString());
+            } else {
+                for (int i = 0; i < palIds.size(); ++i) {
+                    const auto notes = selectRows(QStringLiteral(
+                        "SELECT strftime('%d.%m.%Y',n.date) AS date, COALESCE(n.content,'') AS content "
+                        "FROM note n, pupilatlesson pal WHERE pal.palid=? AND pal.palid=n.palid "
+                        "AND pal.startdate <= n.date AND pal.stopdate >= n.date ORDER BY n.date DESC LIMIT ?"),
+                        {palIds.at(i), noteCount});
+                    for (const QVariantMap &note : notes)
+                        rowsHtml += QStringLiteral("<tr><td><u>%1</u> (<i>%2</i>):</td><td>%3</td></tr>")
+                            .arg(htmlCell(note.value(QStringLiteral("date"))), names.at(i), note.value(QStringLiteral("content")).toString());
+                }
+            }
+            rowsHtml += QStringLiteral("</table>");
+        }
+        rowsHtml += QStringLiteral("</td></tr>");
+    }
+
+    const QString title = QStringLiteral("Qupil %1 - %2 - %3")
+        .arg(QCoreApplication::applicationVersion().toHtmlEscaped(), tr("Daily schedule").toHtmlEscaped(), dayString.toHtmlEscaped());
+    return documentFrame(title, QStringLiteral("<table>%1%2</table>").arg(tableHead, rowsHtml));
+}
+
+QString AppController::recitalDocumentHtml(int recitalId) const
+{
+    const QVariantMap r = selectOne(QStringLiteral(
+        "SELECT COALESCE(desc,'') AS description, COALESCE(date,'') AS date, COALESCE(time,'') AS time, "
+        "COALESCE(location,'') AS location, COALESCE(organisator,'') AS organizer, "
+        "COALESCE(defaultaccompanist,'') AS accompanist FROM recital WHERE recitalid=?"), {recitalId});
+    if (r.isEmpty())
+        return {};
+
+    struct ProgramRow { int sorting=0; QString composer,title,genre,duration,musician; int minutes=0; };
+    QVector<ProgramRow> program;
+    const auto internal = selectRows(QStringLiteral(
+        "SELECT l.lessonid AS lessonId, pc.composer AS composer, p.title AS title, p.genre AS genre, "
+        "COALESCE(p.duration,0) AS duration, COALESCE(pu.instrumenttype,'') AS instrument, "
+        "CASE WHEN date(pu.birthday, '+' || (strftime('%Y','now') - strftime('%Y',pu.birthday)) || ' years') <= date('now') THEN strftime('%Y','now') - strftime('%Y',pu.birthday) ELSE strftime('%Y','now') - strftime('%Y',pu.birthday) - 1 END AS age, "
+        "COALESCE(pu.forename,'') AS forename, COALESCE(pu.surname,'') AS surname, par.sorting AS sorting "
+        "FROM pupil pu, piece p, lesson l, pupilatlesson pal, piececomposer pc, pieceatrecital par "
+        "WHERE pal.palid=p.palid AND p.piececomposerid=pc.piececomposerid AND pal.lessonid=l.lessonid "
+        "AND pal.pupilid=pu.pupilid AND pal.stopdate > date('now') AND par.pieceid=p.pieceid "
+        "AND par.ifexternalpiece=0 AND par.recitalid=? ORDER BY par.sorting ASC, age ASC"), {recitalId});
+    for (const QVariantMap &row : internal) {
+        ProgramRow pr;
+        pr.sorting=row.value(QStringLiteral("sorting")).toInt();
+        pr.composer=row.value(QStringLiteral("composer")).toString();
+        pr.title=row.value(QStringLiteral("title")).toString();
+        pr.genre=row.value(QStringLiteral("genre")).toString();
+        pr.minutes=row.value(QStringLiteral("duration")).toInt();
+        pr.duration=QStringLiteral("%1 %2").arg(pr.minutes).arg(tr("Min."));
+        const int groupCount = selectOne(QStringLiteral(
+            "SELECT COUNT(*) AS n FROM piece p, lesson l, pupilatlesson pal WHERE pal.palid=p.palid "
+            "AND pal.lessonid=l.lessonid AND pal.stopdate > date('now') AND l.lessonid=? AND p.title=?"),
+            {row.value(QStringLiteral("lessonId")), pr.title}).value(QStringLiteral("n")).toInt();
+        if (groupCount > 1) {
+            const auto members=selectRows(QStringLiteral(
+                "SELECT COALESCE(pu.forename,'') AS forename, COALESCE(pu.surname,'') AS surname, "
+                "COALESCE(pu.instrumenttype,'') AS instrument, CASE WHEN date(pu.birthday, '+' || (strftime('%Y','now') - strftime('%Y',pu.birthday)) || ' years') <= date('now') THEN strftime('%Y','now') - strftime('%Y',pu.birthday) ELSE strftime('%Y','now') - strftime('%Y',pu.birthday) - 1 END AS age "
+                "FROM pupil pu, pupilatlesson pal WHERE pal.pupilid=pu.pupilid AND pal.lessonid=? "
+                "AND pal.stopdate > date('now') ORDER BY age ASC"), {row.value(QStringLiteral("lessonId"))});
+            QStringList people;
+            for (const QVariantMap &m: members)
+                people << QStringLiteral("%1, %2 (%3) - %4").arg(m.value(QStringLiteral("surname")).toString().toHtmlEscaped(),
+                    m.value(QStringLiteral("forename")).toString().toHtmlEscaped(), QString::number(m.value(QStringLiteral("age")).toInt()),
+                    m.value(QStringLiteral("instrument")).toString().toHtmlEscaped());
+            pr.musician=people.join(QStringLiteral("<br>"));
+        } else {
+            pr.musician=QStringLiteral("%1, %2 (%3) - %4").arg(row.value(QStringLiteral("surname")).toString().toHtmlEscaped(),
+                row.value(QStringLiteral("forename")).toString().toHtmlEscaped(), QString::number(row.value(QStringLiteral("age")).toInt()),
+                row.value(QStringLiteral("instrument")).toString().toHtmlEscaped());
+        }
+        program.push_back(pr);
+    }
+    const auto external=selectRows(QStringLiteral(
+        "SELECT par.sorting AS sorting, COALESCE(erp.composer,'') AS composer, COALESCE(erp.title,'') AS title, "
+        "COALESCE(erp.genre,'') AS genre, COALESCE(erp.duration,0) AS duration, COALESCE(erp.musician,'') AS musician "
+        "FROM externalrecitalpiece erp, pieceatrecital par WHERE par.pieceid=erp.erpid AND par.ifexternalpiece=1 "
+        "AND par.recitalid=? ORDER BY par.sorting ASC"), {recitalId});
+    for (const QVariantMap &row: external) {
+        ProgramRow pr; pr.sorting=row.value(QStringLiteral("sorting")).toInt(); pr.composer=row.value(QStringLiteral("composer")).toString();
+        pr.title=row.value(QStringLiteral("title")).toString(); pr.genre=row.value(QStringLiteral("genre")).toString();
+        pr.minutes=row.value(QStringLiteral("duration")).toInt(); pr.duration=QStringLiteral("%1 %2").arg(pr.minutes).arg(tr("Min."));
+        pr.musician=row.value(QStringLiteral("musician")).toString().toHtmlEscaped(); program.push_back(pr);
+    }
+    std::sort(program.begin(),program.end(),[](const ProgramRow&a,const ProgramRow&b){return a.sorting<b.sorting;});
+
+    QString rows; int pure=0;
+    for (const ProgramRow &pr: program) { pure+=pr.minutes; rows += QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td><td>%5</td></tr>")
+        .arg(pr.composer.toHtmlEscaped(),pr.title.toHtmlEscaped(),pr.genre.toHtmlEscaped(),pr.duration.toHtmlEscaped(),pr.musician); }
+    const int total = program.isEmpty() ? 0 : settingValue(QStringLiteral("recitalModerationDuration"), 0).toInt() + pure
+        + int(program.size()) * settingValue(QStringLiteral("recitalBetweenPiecesDuration"), 0).toInt();
+    QString body=QStringLiteral("<table class='noborder'><tr><td><b>%1:</b> %2</td><td><b>%3:</b> %4</td><td><b>%5:</b> %6</td><td><b>%7:</b> %8</td><td><b>%9:</b> %10</td></tr></table>")
+        .arg(tr("Date").toHtmlEscaped(),formattedIsoDate(r.value(QStringLiteral("date")).toString()).toHtmlEscaped(),tr("Time").toHtmlEscaped(),htmlCell(r.value(QStringLiteral("time"))),
+             tr("Location").toHtmlEscaped(),htmlCell(r.value(QStringLiteral("location"))),tr("Organiser").toHtmlEscaped(),htmlCell(r.value(QStringLiteral("organizer"))),
+             tr("Accompanist").toHtmlEscaped(),htmlCell(r.value(QStringLiteral("accompanist"))));
+    body += QStringLiteral("<table><tr><th>%1</th><th>%2</th><th>%3</th><th>%4</th><th>%5</th></tr>%6</table>")
+        .arg(tr("Composer").toHtmlEscaped(),tr("Music Piece / Movements").toHtmlEscaped(),tr("Genre").toHtmlEscaped(),tr("Duration").toHtmlEscaped(),tr("Musician (Age) - Instrument").toHtmlEscaped(),rows);
+    body += QStringLiteral("<p><b>%1:</b> %2 %3</p><p><b>%4:</b> %5 %3</p>")
+        .arg(tr("Pure playing time").toHtmlEscaped(),QString::number(pure),tr("Min.").toHtmlEscaped(),tr("Estimated total duration").toHtmlEscaped(),QString::number(total));
+    return documentFrame(tr("Program for") + QStringLiteral(" \"") + r.value(QStringLiteral("description")).toString() + QStringLiteral("\""), body);
+}
+
+QString AppController::rentalInstrumentDocumentHtml() const
+{
+    const auto rows = selectRows(QStringLiteral(
+        "SELECT (COALESCE(surname,'') || ', ' || COALESCE(forename,'')) AS name, strftime('%d.%m.%Y',birthday) AS birthday, "
+        "COALESCE(instrumenttype,'') AS instrument, COALESCE(instrumentsize,'') AS size, COALESCE(rentinstrumentdesc,'') AS description, "
+        "COALESCE(ifinstrumentnextsize,0) AS nextSize FROM pupil WHERE instrumenttype IS NOT NULL AND instrumentsize IS NOT NULL AND ifrentinstrument=1"));
+    QString tableRows;
+    for (const QVariantMap &row: rows)
+        tableRows += QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td><td>%5</td><td>%6</td></tr>")
+            .arg(htmlCell(row.value(QStringLiteral("name"))),htmlCell(row.value(QStringLiteral("birthday"))),htmlCell(row.value(QStringLiteral("instrument"))),
+                 htmlCell(row.value(QStringLiteral("size"))),htmlCell(row.value(QStringLiteral("description"))),
+                 row.value(QStringLiteral("nextSize")).toBool()?tr("Yes").toHtmlEscaped():tr("No").toHtmlEscaped());
+    const QString title=QStringLiteral("Qupil %1 - %2").arg(QCoreApplication::applicationVersion().toHtmlEscaped(),tr("Rental instrument inventory list").toHtmlEscaped());
+    const QString body=QStringLiteral("<h2>%1: %2</h2><table><tr><th>%3</th><th>%4</th><th>%5</th><th>%6</th><th>%7</th><th>%8</th></tr>%9</table>")
+        .arg(tr("Date").toHtmlEscaped(),QDate::currentDate().toString(QStringLiteral("dd.MM.yyyy")),tr("Name").toHtmlEscaped(),tr("Birthday").toHtmlEscaped(),
+             tr("Instrument").toHtmlEscaped(),tr("Size").toHtmlEscaped(),tr("Description").toHtmlEscaped(),tr("Next size required").toHtmlEscaped(),tableRows);
+    return documentFrame(title,body);
+}
+
+QUrl AppController::suggestedPdfUrl(const QString &baseName) const
+{
+    if (baseName.trimmed().isEmpty())
+        return QUrl::fromLocalFile(QDir::homePath());
+    return QUrl::fromLocalFile(QDir(QDir::homePath()).filePath(safePdfBaseName(baseName)));
+}
+
+bool AppController::exportDocumentPdf(const QString &html, const QUrl &destination,
+                                      const QString &title, bool landscape)
+{
+    clearError();
+    QString path = pathForUrl(destination);
+    if (path.isEmpty()) {
+        setError(tr("No PDF destination was selected."));
+        return false;
+    }
+    if (!path.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive))
+        path += QStringLiteral(".pdf");
+    QString error;
+    if (!writeHtmlPdf(html, path, title, landscape, &error)) {
+        setError(error);
+        return false;
+    }
+    return true;
+}
+
+bool AppController::shareDocumentPdf(const QString &html, const QString &baseName,
+                                     const QString &title, bool landscape)
+{
+    clearError();
+    const QString shareDir = QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation))
+        .filePath(QStringLiteral("qupil-share"));
+    QDir().mkpath(shareDir);
+    const QString filePath = QDir(shareDir).filePath(safePdfBaseName(baseName));
+    QString error;
+    if (!writeHtmlPdf(html, filePath, title, landscape, &error)) {
+        setError(error);
+        return false;
+    }
+    if (!qupilSharePdf(filePath, title, &error)) {
+        setError(error.isEmpty() ? tr("The PDF could not be shared.") : error);
+        return false;
+    }
+    return true;
+}
+
+QStringList AppController::availablePrinters() const
+{
+#ifdef QUPIL_DESKTOP_PRINTING
+    return QPrinterInfo::availablePrinterNames();
+#else
+    return {};
+#endif
+}
+
+QString AppController::defaultPrinterName() const
+{
+#ifdef QUPIL_DESKTOP_PRINTING
+    return QPrinterInfo::defaultPrinterName();
+#else
+    return {};
+#endif
+}
+
+bool AppController::printDocument(const QString &html, const QString &printerName,
+                                  const QString &title, bool landscape)
+{
+#ifdef QUPIL_DESKTOP_PRINTING
+    clearError();
+    QPrinterInfo info = printerName.isEmpty() ? QPrinterInfo::defaultPrinter() : QPrinterInfo::printerInfo(printerName);
+    if (info.isNull()) {
+        setError(tr("No printer is available."));
+        return false;
+    }
+    QPrinter printer(info, QPrinter::HighResolution);
+    printer.setDocName(title);
+    printer.setPageSize(QPageSize(QPageSize::A4));
+    printer.setPageOrientation(landscape ? QPageLayout::Landscape : QPageLayout::Portrait);
+    printer.setPageMargins(QMarginsF(10, 12, 10, 12), QPageLayout::Millimeter);
+    QTextDocument document;
+    document.setHtml(html);
+    document.print(&printer);
+    return printer.printerState() != QPrinter::Error;
+#else
+    Q_UNUSED(html)
+    Q_UNUSED(printerName)
+    Q_UNUSED(title)
+    Q_UNUSED(landscape)
+    setError(tr("Printing is available on the desktop build."));
+    return false;
+#endif
+}
+
 QVariantList AppController::birthdays() const
 {
     QVariantList result;
@@ -885,52 +1287,79 @@ bool AppController::deletePupil(int pupilId)
 
 QString AppController::buildPupilArchiveHtml(int pupilId) const
 {
-    const QVariantMap p = pupil(pupilId);
-    if (p.isEmpty())
-        return {};
+    const QVariantMap p = selectOne(QStringLiteral(
+        "SELECT pupilid AS id, COALESCE(forename,'') AS forename, COALESCE(surname,'') AS surname, COALESCE(address,'') AS address, "
+        "COALESCE(email,'') AS email, COALESCE(telefon,'') AS phone, COALESCE(handy,'') AS mobile, COALESCE(birthday,'') AS birthday, "
+        "COALESCE(notes,'') AS notes, COALESCE(fathername,'') AS fatherName, COALESCE(fatherjob,'') AS fatherJob, COALESCE(fathertelefon,'') AS fatherPhone, "
+        "COALESCE(mothername,'') AS motherName, COALESCE(motherjob,'') AS motherJob, COALESCE(mothertelefon,'') AS motherPhone, "
+        "COALESCE(firstlessondate,'') AS firstLessonDate, COALESCE(instrumenttype,'') AS instrument, COALESCE(instrumentsize,'') AS size, "
+        "COALESCE(rentinstrumentdesc,'') AS rentalDescription, COALESCE(rentinstrumentstartdate,'') AS rentalSince FROM pupil WHERE pupilid=?"), {pupilId});
+    if (p.isEmpty()) return {};
+    const QDate firstLesson=QDate::fromString(p.value(QStringLiteral("firstLessonDate")).toString(),Qt::ISODate);
+    const int lessonYears=firstLesson.isValid()?qAbs(QDate::currentDate().daysTo(firstLesson))/365:0;
+    QString body=QStringLiteral("<h2>%1: %2</h2><h2><u>%3:</u></h2><table class='noborder'>")
+        .arg(tr("Date").toHtmlEscaped(),QDate::currentDate().toString(QStringLiteral("dd.MM.yyyy")),tr("Personal data").toHtmlEscaped());
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td>%2</td><td><b>%3:</b></td><td>%4</td></tr>")
+        .arg(tr("First name").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("forename"))),tr("Last name").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("surname"))));
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td>%2</td><td><b>%3:</b></td><td>%4</td></tr>")
+        .arg(tr("Address").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("address"))),tr("E-Mail").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("email"))));
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td>%2</td><td><b>%3:</b></td><td>%4</td></tr>")
+        .arg(tr("Phone").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("phone"))),tr("Mobile").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("mobile"))));
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td colspan='3'>%2</td></tr>")
+        .arg(tr("Birthday").toHtmlEscaped(),formattedIsoDate(p.value(QStringLiteral("birthday")).toString()).toHtmlEscaped());
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td>%2</td><td><b>%3:</b></td><td>%4</td></tr>")
+        .arg(tr("Name (Father)").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("fatherName"))),tr("Job (Father)").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("fatherJob"))));
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td>%2</td><td><b>%3:</b></td><td>%4</td></tr>")
+        .arg(tr("Phone (Father)").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("fatherPhone"))),tr("Name (Mother)").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("motherName"))));
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td>%2</td><td><b>%3:</b></td><td>%4</td></tr>")
+        .arg(tr("Job (Mother)").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("motherJob"))),tr("Phone (Mother)").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("motherPhone"))));
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td colspan='3'>%2 (%3 %4 %5)</td></tr>")
+        .arg(tr("Lesson since").toHtmlEscaped(),formattedIsoDate(p.value(QStringLiteral("firstLessonDate")).toString()).toHtmlEscaped(),tr("total").toHtmlEscaped(),QString::number(lessonYears),tr("Years").toHtmlEscaped());
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td>%2</td><td><b>%3:</b></td><td>%4</td></tr>")
+        .arg(tr("Instrument").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("instrument"))),tr("Size").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("size"))));
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td>%2</td><td><b>%3:</b></td><td>%4</td></tr>")
+        .arg(tr("Rental instrument description").toHtmlEscaped(),htmlCell(p.value(QStringLiteral("rentalDescription"))),tr("Rented since").toHtmlEscaped(),formattedIsoDate(p.value(QStringLiteral("rentalSince")).toString()).toHtmlEscaped());
+    body += QStringLiteral("<tr><td><b>%1:</b></td><td colspan='3'>%2</td></tr></table>")
+        .arg(tr("Notes").toHtmlEscaped(),p.value(QStringLiteral("notes")).toString());
 
-    QString html = QStringLiteral("<!doctype html><html><head><meta charset='utf-8'><style>"
-                                  "body{font-family:sans-serif}table{border-collapse:collapse;width:100%}"
-                                  "td,th{padding:4px;border-bottom:1px solid #ccc;text-align:left}</style></head><body>");
-    html += QStringLiteral("<h1>%1 %2</h1>").arg(htmlCell(p.value(QStringLiteral("forename"))),
-                                                  htmlCell(p.value(QStringLiteral("surname"))));
-    html += QStringLiteral("<h2>%1</h2><table>").arg(tr("Personal data").toHtmlEscaped());
-    const QList<QPair<QString, QString>> fields = {
-        {tr("Address"), QStringLiteral("address")}, {tr("E-mail"), QStringLiteral("email")},
-        {tr("Phone"), QStringLiteral("phone")}, {tr("Mobile"), QStringLiteral("mobile")},
-        {tr("Birthday"), QStringLiteral("birthday")}, {tr("First lesson"), QStringLiteral("firstLessonDate")},
-        {tr("Instrument"), QStringLiteral("instrument")}, {tr("Instrument size"), QStringLiteral("instrumentSize")},
-        {tr("Notes"), QStringLiteral("notes")}
-    };
-    for (const auto &field : fields)
-        html += QStringLiteral("<tr><th>%1</th><td>%2</td></tr>").arg(field.first.toHtmlEscaped(), htmlCell(p.value(field.second)));
-    html += QStringLiteral("</table>");
-
-    html += QStringLiteral("<h2>%1</h2><table><tr><th>%2</th><th>%3</th><th>%4</th></tr>")
-                .arg(tr("Lesson notes").toHtmlEscaped(), tr("Date").toHtmlEscaped(),
-                     tr("Lesson").toHtmlEscaped(), tr("Note").toHtmlEscaped());
-    const auto notes = notesForPupil(pupilId);
-    for (const QVariant &item : notes) {
-        const auto row = item.toMap();
-        html += QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td></tr>")
-                    .arg(htmlCell(row.value(QStringLiteral("date"))), htmlCell(row.value(QStringLiteral("lessonName"))),
-                         row.value(QStringLiteral("content")).toString());
+    const int activityCount=selectOne(QStringLiteral("SELECT COUNT(*) AS n FROM activity WHERE pupilid=?"),{pupilId}).value(QStringLiteral("n")).toInt();
+    if(activityCount){
+        body += QStringLiteral("<h2><u>%1:</u></h2>").arg(tr("Activities of the student").toHtmlEscaped());
+        const QStringList days={tr("Monday"),tr("Tuesday"),tr("Wednesday"),tr("Thursday"),tr("Friday"),tr("Saturday"),tr("Sunday"),tr("irregular")};
+        const auto regular=selectRows(QStringLiteral("SELECT COALESCE(desc,'') AS description, COALESCE(continousday,0) AS day, COALESCE(continoustime,'') AS time, strftime('%d.%m.%Y',date) AS start, strftime('%d.%m.%Y',continousstopdate) AS stop FROM activity WHERE pupilid=? AND ifcontinous=1 ORDER BY date DESC"),{pupilId});
+        body += QStringLiteral("<h3>%1:</h3><table><tr><th>%2</th><th>%3</th><th>%4</th><th>%5</th><th>%6</th></tr>")
+            .arg(tr("Regular activities").toHtmlEscaped(),tr("Description").toHtmlEscaped(),tr("Weekday").toHtmlEscaped(),tr("Time").toHtmlEscaped(),tr("Start").toHtmlEscaped(),tr("End").toHtmlEscaped());
+        for(const QVariantMap&r:regular){int d=r.value(QStringLiteral("day")).toInt();body+=QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td><td>%5</td></tr>").arg(htmlCell(r.value(QStringLiteral("description"))),d>=0&&d<days.size()?days.at(d).toHtmlEscaped():QString(),htmlCell(r.value(QStringLiteral("time"))),htmlCell(r.value(QStringLiteral("start"))),htmlCell(r.value(QStringLiteral("stop"))));} body+=QStringLiteral("</table>");
+        const QStringList types={tr("Solo Recital"),tr("Ensemble Recital"),tr("Other")};
+        const auto irregular=selectRows(QStringLiteral("SELECT COALESCE(desc,'') AS description, strftime('%d.%m.%Y',date) AS date, COALESCE(noncontinoustype,0) AS type FROM activity WHERE pupilid=? AND ifcontinous=0 ORDER BY date DESC"),{pupilId});
+        body += QStringLiteral("<h3>%1:</h3><table><tr><th>%2</th><th>%3</th><th>%4</th></tr>").arg(tr("Irregular activities").toHtmlEscaped(),tr("Description").toHtmlEscaped(),tr("Date").toHtmlEscaped(),tr("Type").toHtmlEscaped());
+        for(const QVariantMap&r:irregular){int t=r.value(QStringLiteral("type")).toInt();body+=QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td></tr>").arg(htmlCell(r.value(QStringLiteral("description"))),htmlCell(r.value(QStringLiteral("date"))),t>=0&&t<types.size()?types.at(t).toHtmlEscaped():QString());} body+=QStringLiteral("</table>");
     }
-    html += QStringLiteral("</table>");
 
-    html += QStringLiteral("<h2>%1</h2><table><tr><th>%2</th><th>%3</th><th>%4</th><th>%5</th></tr>")
-                .arg(tr("Music pieces").toHtmlEscaped(), tr("Composer").toHtmlEscaped(), tr("Title").toHtmlEscaped(),
-                     tr("Lesson").toHtmlEscaped(), tr("State").toHtmlEscaped());
-    const auto pieces = piecesForPupil(pupilId);
-    for (const QVariant &item : pieces) {
-        const auto row = item.toMap();
-        html += QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td></tr>")
-                    .arg(htmlCell(row.value(QStringLiteral("composer"))), htmlCell(row.value(QStringLiteral("title"))),
-                         htmlCell(row.value(QStringLiteral("lessonName"))), htmlCell(row.value(QStringLiteral("stateName"))));
+    const int lessonCount=selectOne(QStringLiteral("SELECT COUNT(*) AS n FROM pupilatlesson WHERE pupilid=?"),{pupilId}).value(QStringLiteral("n")).toInt();
+    if(lessonCount){
+        body += QStringLiteral("<h2><u>%1:</u></h2>").arg(tr("Lesson notes and music pieces").toHtmlEscaped());
+        struct Membership {int palId; QString name,start,stop; bool active;}; QVector<Membership> ms;
+        const auto old=selectRows(QStringLiteral("SELECT pal.palid AS palId, COALESCE(lln.lessonname,'') AS name, COALESCE(pal.startdate,'') AS start, COALESCE(pal.stopdate,'') AS stop FROM pupilatlesson pal,lastlessonname lln WHERE pal.llnid=lln.llnid AND pal.pupilid=? AND pal.stopdate <= date('now')"),{pupilId});
+        for(const QVariantMap&r:old) ms.push_back({r.value(QStringLiteral("palId")).toInt(),r.value(QStringLiteral("name")).toString(),r.value(QStringLiteral("start")).toString(),r.value(QStringLiteral("stop")).toString(),false});
+        const auto active=selectRows(QStringLiteral("SELECT pal.palid AS palId, COALESCE(l.lessonname,'') AS name, COALESCE(pal.startdate,'') AS start FROM pupilatlesson pal,lesson l WHERE pal.pupilid=? AND pal.lessonid=l.lessonid AND pal.stopdate > date('now') ORDER BY pal.startdate ASC"),{pupilId});
+        for(const QVariantMap&r:active) ms.push_back({r.value(QStringLiteral("palId")).toInt(),r.value(QStringLiteral("name")).toString(),r.value(QStringLiteral("start")).toString(),QString(),true});
+        body += QStringLiteral("<p><b>%1:</b></p><ol>").arg(tr("The student took part in the following lessons").toHtmlEscaped());
+        for(const Membership&m:ms) body += QStringLiteral("<li>%1 (%2 %3%4)</li>").arg(m.name.toHtmlEscaped(),m.active?tr("since").toHtmlEscaped():tr("from").toHtmlEscaped(),formattedIsoDate(m.start).toHtmlEscaped(),m.active?QString():QStringLiteral(" %1 %2").arg(tr("to").toHtmlEscaped(),formattedIsoDate(m.stop).toHtmlEscaped()));
+        body += QStringLiteral("</ol>");
+        const QStringList states={tr("Planned"),tr("In Progress"),tr("Paused"),tr("Ready for Concert"),tr("Finished")};
+        for(const Membership&m:ms){
+            const QString range=m.active?QStringLiteral("%1 %2").arg(tr("since").toHtmlEscaped(),formattedIsoDate(m.start).toHtmlEscaped()):QStringLiteral("%1 %2 %3 %4").arg(tr("from").toHtmlEscaped(),formattedIsoDate(m.start).toHtmlEscaped(),tr("to").toHtmlEscaped(),formattedIsoDate(m.stop).toHtmlEscaped());
+            const auto notes=selectRows(QStringLiteral("SELECT strftime('%d.%m.%Y',n.date) AS date, COALESCE(n.content,'') AS content FROM note n,pupilatlesson pal WHERE pal.palid=? AND pal.palid=n.palid AND pal.startdate <= n.date AND pal.stopdate >= n.date ORDER BY n.date ASC"),{m.palId});
+            if(!notes.isEmpty()){body += QStringLiteral("<h3>%1 (%2 - %3)</h3><table><tr><th>%4</th><th>%5</th></tr>").arg(tr("Lesson notes").toHtmlEscaped(),m.name.toHtmlEscaped(),range,tr("Date").toHtmlEscaped(),tr("Note").toHtmlEscaped()); for(const QVariantMap&r:notes)body+=QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(htmlCell(r.value(QStringLiteral("date"))),r.value(QStringLiteral("content")).toString()); body+=QStringLiteral("</table>");}
+            const auto pieces=selectRows(QStringLiteral("SELECT COALESCE(p.title,'') AS title,COALESCE(p.genre,'') AS genre,COALESCE(p.duration,0) AS duration,strftime('%d.%m.%Y',p.startdate) AS start,strftime('%d.%m.%Y',p.stopdate) AS stop,COALESCE(p.state,0) AS state FROM piece p,pupilatlesson pal WHERE pal.palid=? AND pal.palid=p.palid AND pal.startdate <= p.startdate AND pal.stopdate >= p.startdate ORDER BY p.startdate ASC"),{m.palId});
+            if(!pieces.isEmpty()){body += QStringLiteral("<h3>%1 (%2 - %3)</h3><table><tr><th>%4</th><th>%5</th><th>%6</th><th>%7</th><th>%8</th><th>%9</th></tr>").arg(tr("Music pieces").toHtmlEscaped(),m.name.toHtmlEscaped(),range,tr("Title").toHtmlEscaped(),tr("Genre").toHtmlEscaped(),tr("Duration").toHtmlEscaped(),tr("Start").toHtmlEscaped(),tr("End").toHtmlEscaped(),tr("State").toHtmlEscaped()); for(const QVariantMap&r:pieces){int st=r.value(QStringLiteral("state")).toInt();body+=QStringLiteral("<tr><td>%1</td><td>%2</td><td>%3</td><td>%4</td><td>%5</td><td>%6</td></tr>").arg(htmlCell(r.value(QStringLiteral("title"))),htmlCell(r.value(QStringLiteral("genre"))),htmlCell(r.value(QStringLiteral("duration"))),htmlCell(r.value(QStringLiteral("start"))),htmlCell(r.value(QStringLiteral("stop"))),st>=0&&st<states.size()?states.at(st).toHtmlEscaped():QString());} body+=QStringLiteral("</table>");}
+        }
     }
-    html += QStringLiteral("</table></body></html>");
-    return html;
+    const QString title=QStringLiteral("Qupil %1 - %2: %3 %4 (#%5)").arg(QCoreApplication::applicationVersion(),tr("Archive Entry"),p.value(QStringLiteral("forename")).toString(),p.value(QStringLiteral("surname")).toString(),QString::number(pupilId));
+    return documentFrame(title,body);
 }
+
 
 bool AppController::archivePupil(int pupilId)
 {

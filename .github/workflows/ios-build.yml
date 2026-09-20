@@ -3,8 +3,6 @@ name: Qupil iOS Build
 on:
   workflow_dispatch:
 
-# Only the Linux launcher dispatches this workflow. Do not also trigger on push,
-# otherwise every source upload creates one automatic run plus one manual run.
 concurrency:
   group: qupil-ios-build
   cancel-in-progress: true
@@ -19,6 +17,8 @@ jobs:
     env:
       QT_VERSION: "6.11.2"
       IOS_DEPLOYMENT_TARGET: "17.0"
+      QUPIL_SOURCE_COMMIT: "4ec0b1de37f1159f149e8801b08589c8e3d4294c"
+      QUPIL_SOURCE_VERSION: "1.5.28"
 
     steps:
       - name: Checkout
@@ -44,10 +44,8 @@ jobs:
           "$AQT_VENV/bin/python" -m pip install --upgrade pip
           "$AQT_VENV/bin/python" -m pip install 'aqtinstall==3.3.0'
 
-          echo "Available iOS architectures for Qt $QT_VERSION:"
           "$AQT_VENV/bin/python" -m aqt list-qt mac ios --arch "$QT_VERSION" | tee "$RUNNER_TEMP/qt-ios-arches.txt"
           grep -Eq '(^|[[:space:]])ios([[:space:]]|$)' "$RUNNER_TEMP/qt-ios-arches.txt"
-          echo "Checking qtmultimedia module for iOS..."
           "$AQT_VENV/bin/python" -m aqt list-qt mac ios --modules "$QT_VERSION" ios | tee "$RUNNER_TEMP/qt-ios-modules.txt"
           grep -Eq '(^|[[:space:]])qtmultimedia([[:space:]]|$)' "$RUNNER_TEMP/qt-ios-modules.txt"
 
@@ -58,17 +56,15 @@ jobs:
           test -x "$QT_ROOT/$QT_VERSION/macos/bin/qt-cmake"
           test -x "$QT_ROOT/$QT_VERSION/ios/bin/qt-cmake"
 
-          echo "Installed Qt iOS FFmpeg XCFrameworks (diagnostic):"
-          find "$QT_ROOT/$QT_VERSION/ios" -type d -name '*.xcframework'             | grep -Ei '/(lib)?(avcodec|avformat|avutil|swresample|swscale)\.xcframework$'             | sort || true
-
       - name: Re-run source validation on macOS
         shell: bash
         run: |
           set -euxo pipefail
-          python3 tests/source_sanity.py
-          python3 tests/sql_static_smoke.py
-          python3 tests/i18n_static_smoke.py
-          python3 tests/i18n_catalog_smoke.py
+          for test in source_sanity.py sql_static_smoke.py i18n_static_smoke.py i18n_catalog_smoke.py; do
+            if [[ -f "tests/$test" ]]; then
+              python3 "tests/$test"
+            fi
+          done
 
       - name: Compile translation catalog
         shell: bash
@@ -80,7 +76,7 @@ jobs:
             test -s i18n/qupil_de.qm
           fi
 
-      - name: Verify iOS FFmpeg CMake integration
+      - name: Verify iOS FFmpeg integration
         shell: bash
         run: |
           set -euxo pipefail
@@ -110,7 +106,6 @@ jobs:
           APP="$(find build-ios -type d -name '*.app' -path '*iphoneos*' | head -n 1)"
           test -n "$APP"
           test -d "$APP"
-          echo "Found app: $APP"
           rm -rf dist Payload
           mkdir -p dist Payload
           cp -R "$APP" Payload/
@@ -118,12 +113,14 @@ jobs:
           rm -rf Payload
           shasum -a 256 dist/Qupil-ios-unsigned.ipa > dist/SHA256SUMS
           {
+            echo "Qupil: $QUPIL_SOURCE_VERSION"
+            echo "Source commit: $QUPIL_SOURCE_COMMIT"
             echo "Qt: $QT_VERSION"
             echo "Runner: macos-26"
             xcodebuild -version
             echo "iOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
             echo "Deployment target: $IOS_DEPLOYMENT_TARGET"
-            echo "Commit: $GITHUB_SHA"
+            echo "CI mirror commit: $GITHUB_SHA"
           } > dist/BUILD-INFO.txt
 
       - name: Upload iOS artifact

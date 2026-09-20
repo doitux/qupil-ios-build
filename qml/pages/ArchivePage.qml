@@ -56,6 +56,13 @@ Page {
                     color: root.palette.text
                 }
             }
+            DocumentActions {
+                visible: root.selectedId >= 0
+                documentTitle: qsTr("Pupil archive")
+                suggestedFileName: ""
+                landscape: false
+                createDocument: function() { return root.archiveHtml }
+            }
         }
     }
 
